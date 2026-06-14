@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Grand Strategy – WW1 & WW2 Europe</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- ========== MAIN MENU ========== -->
+    <div id="menu">
+      <h1>⚔️ Grand Strategy</h1>
+      <p class="subtitle">World Wars Tactical Simulator</p>
+      <div id="scenario-buttons">
+        <button class="scenario-btn" onclick="selectScenario(3)">
+          <span class="emoji-icon">⚔️</span>
+          WW1 Europe, 1914
+        </button>
+        <button class="scenario-btn" onclick="selectScenario(1)">
+          <span class="emoji-icon">🔥</span>
+          WW2 Europe, 1939
+        </button>
+        <button class="scenario-btn" onclick="selectScenario(2)">
+          <span class="emoji-icon">🐻</span>
+          Germany vs USSR
+        </button>
+      </div>
+      <div id="country-select">
+        <button class="back-btn" onclick="backToScenarios()">← Back</button>
+        <div class="toggle-row">
+          <input type="checkbox" id="historical-mode" checked />
+          <span>Historical alignments & events</span>
+        </div>
+        <div class="toggle-row">
+          <input
+            type="checkbox"
+            id="spectator-mode"
+            onchange="toggleSpectator()"
+          />
+          <span>Spectator mode (watch AI)</span>
+        </div>
+        <div class="toggle-row">
+          <input type="checkbox" id="exploration-mode" checked />
+          <span>Exploration (hide far enemies)</span>
+        </div>
+        <div id="player-options">
+          <label>Difficulty:</label>
+          <select id="difficulty-select">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+        <div id="country-label">
+          <label>Choose your country:</label>
+        </div>
+        <select id="player-country"></select>
+        <button id="start-btn" onclick="initializeGame()">
+          ▶ Start Campaign
+        </button>
+      </div>
+    </div>
+
+    <!-- ========== HUD ========== -->
+    <div id="hud" style="display: none">
+      <div class="hud-left">
+        <div id="hud-flag"></div>
+        <div class="hud-panel">
+          <span class="hud-stat">💰<b id="money-display">0</b></span>
+          <span class="hud-stat">⭐<b id="dp-display">0</b></span>
+          <span class="hud-stat">🏙️<b id="city-display">0</b></span>
+          <span class="hud-stat">⚔️<b id="army-display">0</b></span>
+        </div>
+      </div>
+      <div class="hud-panel">
+        <button
+          onclick="openDiplomacy()"
+          style="background: #8e44ad"
+          title="Diplomacy"
+        >
+          🌍
+        </button>
+        <button
+          onclick="togglePause()"
+          id="pause-btn"
+          style="background: #e94560"
+          title="Pause"
+        >
+          ⏸️
+        </button>
+        <button onclick="returnToMenu()" style="background: #555" title="Menu">
+          🏠
+        </button>
+      </div>
+    </div>
+
+    <!-- ========== SPECTATOR HUD ========== -->
+    <div id="spectator-hud">
+      <span>👁️ Spectator</span>
+      <button
+        onclick="togglePause()"
+        id="spectator-pause-btn"
+        style="background: #e94560"
+      >
+        ⏸️
+      </button>
+      <button onclick="returnToMenu()" style="background: #555">🏠</button>
+    </div>
+
+    <!-- ========== ACTION PANEL ========== -->
+    <div id="action-panel"></div>
+
+    <!-- ========== DIPLOMACY PANEL ========== -->
+    <div id="diplo-overlay" onclick="closeDiplomacy()"></div>
+    <div id="diplo-panel">
+      <h3>
+        🌍 Diplomacy
+        <button
+          onclick="closeDiplomacy()"
+          style="
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+          "
+        >
+          ✕
+        </button>
+      </h3>
+      <div id="diplo-content"></div>
+    </div>
+
+    <!-- ========== GAME CANVAS ========== -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- ========== SCRIPTS ========== -->
+    <script src="game.js"></script>
+  </body>
+</html>
