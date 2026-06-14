@@ -1,0 +1,8 @@
+- [ ] Make HUD panels bigger
+- [ ] Add movement arrows for armies
+- [ ] Clear occupier marks when country is conquered
+- [ ] War only if relations <= -50, ally only if >= +50
+- [ ] Flag click opens stats panel (5 charts + ideology/leader)
+- [ ] HUD show army points and territory % instead of just counts
+- [ ] Add ideology & leader data for each country
+- [ ] Fix capture to clear enemy paint from territory

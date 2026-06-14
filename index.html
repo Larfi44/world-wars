@@ -67,15 +67,21 @@
     <!-- ========== HUD ========== -->
     <div id="hud" style="display: none">
       <div class="hud-left">
-        <div id="hud-flag"></div>
-        <div class="hud-panel">
+        <div
+          id="hud-flag"
+          onclick="openStatsPanel()"
+          title="View statistics"
+        ></div>
+        <div class="hud-panel hud-panel-main">
           <span class="hud-stat">💰<b id="money-display">0</b></span>
           <span class="hud-stat">⭐<b id="dp-display">0</b></span>
           <span class="hud-stat">🏙️<b id="city-display">0</b></span>
           <span class="hud-stat">⚔️<b id="army-display">0</b></span>
+          <span class="hud-stat">💪<b id="power-display">0</b></span>
+          <span class="hud-stat">🗺️<b id="territory-display">0%</b></span>
         </div>
       </div>
-      <div class="hud-panel">
+      <div class="hud-panel hud-panel-buttons">
         <button
           onclick="openDiplomacy()"
           style="background: #8e44ad"
@@ -95,6 +101,98 @@
           🏠
         </button>
       </div>
+    </div>
+
+    <!-- ========== STATS PANEL ========== -->
+    <div id="stats-overlay" onclick="closeStatsPanel()"></div>
+    <div id="stats-panel">
+      <div id="stats-header">
+        <div id="stats-flag-container">
+          <img id="stats-flag" src="" alt="flag" />
+        </div>
+        <div id="stats-info">
+          <h3 id="stats-country-name">Country</h3>
+          <span id="stats-ideology">Ideology</span>
+          <span id="stats-leader-name">Leader</span>
+        </div>
+        <div id="stats-leader-container">
+          <img id="stats-leader-img" src="" alt="leader" />
+          <span id="stats-leader-label">Leader</span>
+        </div>
+      </div>
+      <div id="stats-charts">
+        <div class="stat-chart">
+          <span class="chart-label">💰 Gold</span>
+          <div class="chart-bar-bg">
+            <div
+              class="chart-bar-fill"
+              id="chart-gold"
+              style="width: 50%"
+            ></div>
+          </div>
+          <span class="chart-value" id="chart-gold-val">0</span>
+        </div>
+        <div class="stat-chart">
+          <span class="chart-label">💪 Army Power</span>
+          <div class="chart-bar-bg">
+            <div
+              class="chart-bar-fill"
+              id="chart-power"
+              style="width: 50%"
+            ></div>
+          </div>
+          <span class="chart-value" id="chart-power-val">0</span>
+        </div>
+        <div class="stat-chart">
+          <span class="chart-label">🏙️ Cities</span>
+          <div class="chart-bar-bg">
+            <div
+              class="chart-bar-fill"
+              id="chart-cities"
+              style="width: 50%"
+            ></div>
+          </div>
+          <span class="chart-value" id="chart-cities-val">0</span>
+        </div>
+        <div class="stat-chart">
+          <span class="chart-label">⚔️ Army Count</span>
+          <div class="chart-bar-bg">
+            <div
+              class="chart-bar-fill"
+              id="chart-armies"
+              style="width: 50%"
+            ></div>
+          </div>
+          <span class="chart-value" id="chart-armies-val">0</span>
+        </div>
+        <div class="stat-chart">
+          <span class="chart-label">🗺️ Territory</span>
+          <div class="chart-bar-bg">
+            <div
+              class="chart-bar-fill"
+              id="chart-territory"
+              style="width: 50%"
+            ></div>
+          </div>
+          <span class="chart-value" id="chart-territory-val">0%</span>
+        </div>
+      </div>
+      <button
+        onclick="closeStatsPanel()"
+        style="
+          background: #e94560;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          margin-top: 10px;
+          width: 100%;
+          font-weight: bold;
+        "
+      >
+        ✕ Close
+      </button>
     </div>
 
     <!-- ========== SPECTATOR HUD ========== -->

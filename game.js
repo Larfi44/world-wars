@@ -44,18 +44,102 @@ let mapDirty = true;
 
 // ========== COUNTRY DEFINITIONS ==========
 const allCountryDefs = [
-  { id: 0, name: 'France', color: '#2563eb' },
-  { id: 1, name: 'UK', color: '#0891b2' },
-  { id: 2, name: 'Germany', color: '#d97706' },
-  { id: 3, name: 'Russia', color: '#dc2626' },
-  { id: 4, name: 'Italy', color: '#16a34a' },
-  { id: 5, name: 'Poland', color: '#9333ea' },
-  { id: 6, name: 'Spain', color: '#eab308' },
-  { id: 7, name: 'Sweden', color: '#3b82f6' },
-  { id: 8, name: 'Norway', color: '#ef4444' },
-  { id: 9, name: 'Yugoslavia', color: '#f97316' },
-  { id: 10, name: 'Austria-Hungary', color: '#b8860b' },
-  { id: 11, name: 'Ottoman Empire', color: '#800000' },
+  {
+    id: 0,
+    name: 'France',
+    color: '#2563eb',
+    ideology: 'Democracy',
+    leader: 'Charles de Gaulle',
+    leaderImg: 'leaders/charles-de-gaulle.jpg',
+  },
+  {
+    id: 1,
+    name: 'UK',
+    color: '#0891b2',
+    ideology: 'Democracy',
+    leader: 'Winston Churchill',
+    leaderImg: 'leaders/winston-cherchil.jpg',
+  },
+  {
+    id: 2,
+    name: 'Germany',
+    color: '#d97706',
+    ideology: 'Nazism',
+    leader: 'Adolf Hitler',
+    leaderImg: 'leaders/adolf-hitler.png',
+  },
+  {
+    id: 3,
+    name: 'USSR',
+    color: '#dc2626',
+    ideology: 'Communism',
+    leader: 'Joseph Stalin',
+    leaderImg: 'leaders/stalin.png',
+  },
+  {
+    id: 4,
+    name: 'Italy',
+    color: '#16a34a',
+    ideology: 'Fascism',
+    leader: 'Benito Mussolini',
+    leaderImg: 'leaders/benito-mussolini.jpg',
+  },
+  {
+    id: 5,
+    name: 'Poland',
+    color: '#9333ea',
+    ideology: 'Conservatism',
+    leader: 'Wladyslaw Sikorski',
+    leaderImg: 'leaders/wladyslav-sikorski.jpg',
+  },
+  {
+    id: 6,
+    name: 'Spain',
+    color: '#eab308',
+    ideology: 'Conservatism',
+    leader: 'Francisco Franco',
+    leaderImg: null,
+  },
+  {
+    id: 7,
+    name: 'Sweden',
+    color: '#3b82f6',
+    ideology: 'Democracy',
+    leader: 'Per Albin Hansson',
+    leaderImg: null,
+  },
+  {
+    id: 8,
+    name: 'Norway',
+    color: '#ef4444',
+    ideology: 'Democracy',
+    leader: 'Haakon VII',
+    leaderImg: null,
+  },
+  {
+    id: 9,
+    name: 'Yugoslavia',
+    color: '#f97316',
+    ideology: 'Liberalism',
+    leader: 'King Peter II',
+    leaderImg: null,
+  },
+  {
+    id: 10,
+    name: 'Austria-Hungary',
+    color: '#b8860b',
+    ideology: 'Conservatism',
+    leader: 'Franz Joseph I',
+    leaderImg: null,
+  },
+  {
+    id: 11,
+    name: 'Ottoman Empire',
+    color: '#800000',
+    ideology: 'Conservatism',
+    leader: 'Mehmed VI',
+    leaderImg: null,
+  },
 ];
 
 let countries = [];
@@ -814,6 +898,11 @@ function captureCity(city, newO) {
   if (city.cid === newO) return;
   const oldO = city.cid;
   city.cid = newO;
+  // Clear any enemy occupation paint from captured city's territory
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (grid[y][x].occupier !== null && grid[y][x].owner === newO)
+        grid[y][x].occupier = null;
   const remaining = cities.filter((c) => c.cid === oldO);
   if (remaining.length === 0 && oldO >= 0) {
     for (let y = 0; y < ROWS; y++)
@@ -1029,6 +1118,44 @@ function draw() {
     ctx.font = `bold ${Math.max(8, sz * 0.9)}px Arial`;
     ctx.textAlign = 'center';
     ctx.fillText(`${Math.floor(a.str)}`, a.x, a.y + sz + 8);
+
+    // Draw movement arrow to next path point
+    if (a.path && a.path.length > 0) {
+      const next = a.path[0];
+      const angle = Math.atan2(next.y - a.y, next.x - a.x);
+      const arrowLen = Math.min(sz + 10, dist(a.x, a.y, next.x, next.y) * 0.3);
+      const ax = a.x + Math.cos(angle) * (sz + 2);
+      const ay = a.y + Math.sin(angle) * (sz + 2);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(
+        ax + Math.cos(angle) * arrowLen,
+        ay + Math.sin(angle) * arrowLen,
+      );
+      ctx.stroke();
+
+      // Arrow head
+      const headSize = 5;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.beginPath();
+      ctx.moveTo(
+        ax + Math.cos(angle) * arrowLen,
+        ay + Math.sin(angle) * arrowLen,
+      );
+      ctx.lineTo(
+        ax + Math.cos(angle + 0.5) * (arrowLen - headSize),
+        ay + Math.sin(angle + 0.5) * (arrowLen - headSize),
+      );
+      ctx.lineTo(
+        ax + Math.cos(angle - 0.5) * (arrowLen - headSize),
+        ay + Math.sin(angle - 0.5) * (arrowLen - headSize),
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   // Draw minimap
@@ -1329,14 +1456,28 @@ function refreshHUD() {
   if (spectatorMode || playerCountry < 0) return;
   const c = countries[playerCountry];
   if (!c) return;
+  const pc = playerCountry;
   document.getElementById('money-display').textContent = Math.floor(c.money);
   document.getElementById('dp-display').textContent = Math.floor(c.dp || 0);
-  document.getElementById('city-display').textContent = cities.filter(
-    (ct) => ct.cid === playerCountry,
-  ).length;
-  document.getElementById('army-display').textContent = armies.filter(
-    (a) => a.cid === playerCountry && !a.dead,
-  ).length;
+  const myCities = cities.filter((ct) => ct.cid === pc);
+  document.getElementById('city-display').textContent = myCities.length;
+  const myArmies = armies.filter((a) => a.cid === pc && !a.dead);
+  document.getElementById('army-display').textContent = myArmies.length;
+  // Army power (total strength)
+  const totalPower = myArmies.reduce((s, a) => s + a.power, 0);
+  document.getElementById('power-display').textContent = totalPower;
+  // Territory %
+  let ownedCells = 0;
+  let totalLandCells = 0;
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (grid[y][x].terrain === 'land') {
+        totalLandCells++;
+        if (grid[y][x].owner === pc) ownedCells++;
+      }
+  const pct =
+    totalLandCells > 0 ? Math.round((ownedCells / totalLandCells) * 100) : 0;
+  document.getElementById('territory-display').textContent = pct + '%';
 }
 
 function notify(msg) {
@@ -1377,6 +1518,12 @@ function declareWar(tid) {
     notify('Need 20 DP!');
     return;
   }
+  // Require relations <= -50 to declare war
+  const rel = rels[playerCountry][tid] || 0;
+  if (rel > -50) {
+    notify(`Relations too high (${rel}). Lower them to -50 or below first!`);
+    return;
+  }
   rels[playerCountry][tid] = -60;
   rels[tid][playerCountry] = -60;
   countries[playerCountry].dp -= 20;
@@ -1395,6 +1542,12 @@ function formAlliance(tid) {
   }
   if ((countries[playerCountry].dp || 0) < 30) {
     notify('Need 30 DP!');
+    return;
+  }
+  // Require relations >= +50 to form alliance
+  const rel = rels[playerCountry][tid] || 0;
+  if (rel < 50) {
+    notify(`Relations too low (${rel}). Raise them to +50 or higher first!`);
     return;
   }
   rels[playerCountry][tid] = 60;
@@ -1464,6 +1617,93 @@ function updateDiploPanel() {
       </div>`;
     c.appendChild(d);
   }
+}
+
+// ========== STATS PANEL ==========
+function openStatsPanel() {
+  if (spectatorMode || playerCountry < 0) return;
+  const c = countries[playerCountry];
+  if (!c) return;
+
+  document.getElementById('stats-overlay').style.display = 'block';
+  document.getElementById('stats-panel').style.display = 'block';
+
+  // Set flag
+  const flagPath = getFlagPath(playerCountry);
+  document.getElementById('stats-flag').src = flagPath || '';
+
+  // Set country name & ideology
+  document.getElementById('stats-country-name').textContent = c.name;
+  document.getElementById('stats-ideology').textContent =
+    c.ideology || 'Unknown';
+
+  // Set leader
+  const leaderName = c.leader || 'Unknown';
+  document.getElementById('stats-leader-name').textContent = leaderName;
+  document.getElementById('stats-leader-label').textContent = leaderName;
+  const leaderImg = document.getElementById('stats-leader-img');
+  if (c.leaderImg) {
+    leaderImg.src = c.leaderImg;
+    leaderImg.style.display = 'block';
+  } else {
+    leaderImg.style.display = 'none';
+  }
+
+  updateStatsPanel();
+}
+
+function closeStatsPanel() {
+  document.getElementById('stats-overlay').style.display = 'none';
+  document.getElementById('stats-panel').style.display = 'none';
+}
+
+function updateStatsPanel() {
+  if (spectatorMode || playerCountry < 0) return;
+  const pc = playerCountry;
+  const c = countries[pc];
+
+  // Gold - use max of 2000 as 100%
+  const gold = Math.floor(c.money);
+  const goldMax = 2000;
+  document.getElementById('chart-gold').style.width =
+    Math.min(100, (gold / goldMax) * 100) + '%';
+  document.getElementById('chart-gold-val').textContent = gold;
+
+  // Army power - max 5000
+  const myArmies = armies.filter((a) => a.cid === pc && !a.dead);
+  const totalPower = myArmies.reduce((s, a) => s + a.power, 0);
+  const powerMax = 5000;
+  document.getElementById('chart-power').style.width =
+    Math.min(100, (totalPower / powerMax) * 100) + '%';
+  document.getElementById('chart-power-val').textContent = totalPower;
+
+  // Cities - max 15
+  const cityCount = cities.filter((ct) => ct.cid === pc).length;
+  const cityMax = 15;
+  document.getElementById('chart-cities').style.width =
+    Math.min(100, (cityCount / cityMax) * 100) + '%';
+  document.getElementById('chart-cities-val').textContent = cityCount;
+
+  // Army count - max 30
+  const armyCount = myArmies.length;
+  const armyMax = 30;
+  document.getElementById('chart-armies').style.width =
+    Math.min(100, (armyCount / armyMax) * 100) + '%';
+  document.getElementById('chart-armies-val').textContent = armyCount;
+
+  // Territory - max is cells from grid
+  let ownedCells = 0;
+  let totalLandCells = 0;
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (grid[y][x].terrain === 'land') {
+        totalLandCells++;
+        if (grid[y][x].owner === pc) ownedCells++;
+      }
+  const pct =
+    totalLandCells > 0 ? Math.round((ownedCells / totalLandCells) * 100) : 0;
+  document.getElementById('chart-territory').style.width = pct + '%';
+  document.getElementById('chart-territory-val').textContent = pct + '%';
 }
 
 // ========== ACTIONS ==========
