@@ -6,15 +6,23 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <title>Grand Strategy – WW1 & WW2 Europe</title>
+    <title>World Wars</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <!-- ========== MAIN MENU ========== -->
     <div id="menu">
-      <h1>⚔️ Grand Strategy</h1>
+      <h1>⚔️ World Wars</h1>
       <p class="subtitle">World Wars Tactical Simulator</p>
       <div id="scenario-buttons">
+        <button class="scenario-btn" onclick="selectScenario(4)">
+          <span class="emoji-icon">🔴</span>
+          1v1 (Red vs Blue)
+        </button>
+        <button class="scenario-btn" onclick="selectScenario(5)">
+          <span class="emoji-icon">🌍</span>
+          1x1x1x1 (4 Players)
+        </button>
         <button class="scenario-btn" onclick="selectScenario(3)">
           <span class="emoji-icon">⚔️</span>
           WW1 Europe, 1914
@@ -30,7 +38,15 @@
       </div>
       <div id="country-select">
         <button class="back-btn" onclick="backToScenarios()">← Back</button>
-        <div class="toggle-row">
+        <div class="toggle-row" id="landscape-row" style="display: none">
+          <input type="checkbox" id="landscape-mode" />
+          <span>Landscape (random terrain)</span>
+        </div>
+        <div class="toggle-row" id="diplo-mode-row" style="display: none">
+          <input type="checkbox" id="diplo-mode" checked />
+          <span>Enable diplomacy</span>
+        </div>
+        <div class="toggle-row" id="historical-row">
           <input type="checkbox" id="historical-mode" checked />
           <span>Historical alignments & events</span>
         </div>
@@ -113,84 +129,52 @@
         <div id="stats-info">
           <h3 id="stats-country-name">Country</h3>
           <span id="stats-ideology">Ideology</span>
-          <span id="stats-leader-name">Leader</span>
         </div>
         <div id="stats-leader-container">
           <img id="stats-leader-img" src="" alt="leader" />
           <span id="stats-leader-label">Leader</span>
         </div>
       </div>
-      <div id="stats-charts">
-        <div class="stat-chart">
+      <!-- ========== HISTORY CHARTS ========== -->
+      <div id="history-charts">
+        <div class="history-chart">
           <span class="chart-label">💰 Gold</span>
-          <div class="chart-bar-bg">
-            <div
-              class="chart-bar-fill"
-              id="chart-gold"
-              style="width: 50%"
-            ></div>
-          </div>
-          <span class="chart-value" id="chart-gold-val">0</span>
+          <canvas
+            class="history-canvas"
+            id="hchart-gold"
+            width="300"
+            height="80"
+          ></canvas>
         </div>
-        <div class="stat-chart">
+        <div class="history-chart">
           <span class="chart-label">💪 Army Power</span>
-          <div class="chart-bar-bg">
-            <div
-              class="chart-bar-fill"
-              id="chart-power"
-              style="width: 50%"
-            ></div>
-          </div>
-          <span class="chart-value" id="chart-power-val">0</span>
+          <canvas
+            class="history-canvas"
+            id="hchart-power"
+            width="300"
+            height="80"
+          ></canvas>
         </div>
-        <div class="stat-chart">
-          <span class="chart-label">🏙️ Cities</span>
-          <div class="chart-bar-bg">
-            <div
-              class="chart-bar-fill"
-              id="chart-cities"
-              style="width: 50%"
-            ></div>
-          </div>
-          <span class="chart-value" id="chart-cities-val">0</span>
+        <div class="history-chart">
+          <span class="chart-label">🗺️ Territory %</span>
+          <canvas
+            class="history-canvas"
+            id="hchart-territory"
+            width="300"
+            height="80"
+          ></canvas>
         </div>
-        <div class="stat-chart">
+        <div class="history-chart">
           <span class="chart-label">⚔️ Army Count</span>
-          <div class="chart-bar-bg">
-            <div
-              class="chart-bar-fill"
-              id="chart-armies"
-              style="width: 50%"
-            ></div>
-          </div>
-          <span class="chart-value" id="chart-armies-val">0</span>
-        </div>
-        <div class="stat-chart">
-          <span class="chart-label">🗺️ Territory</span>
-          <div class="chart-bar-bg">
-            <div
-              class="chart-bar-fill"
-              id="chart-territory"
-              style="width: 50%"
-            ></div>
-          </div>
-          <span class="chart-value" id="chart-territory-val">0%</span>
+          <canvas
+            class="history-canvas"
+            id="hchart-armies"
+            width="300"
+            height="80"
+          ></canvas>
         </div>
       </div>
-      <button
-        onclick="closeStatsPanel()"
-        style="
-          background: #e94560;
-          color: white;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 6px;
-          cursor: pointer;
-          margin-top: 10px;
-          width: 100%;
-          font-weight: bold;
-        "
-      >
+      <button onclick="closeStatsPanel()" class="close-stats-btn">
         ✕ Close
       </button>
     </div>
@@ -210,6 +194,9 @@
 
     <!-- ========== ACTION PANEL ========== -->
     <div id="action-panel"></div>
+
+    <!-- ========== SNIPPET BAR ========== -->
+    <div id="snippet-bar"></div>
 
     <!-- ========== DIPLOMACY PANEL ========== -->
     <div id="diplo-overlay" onclick="closeDiplomacy()"></div>

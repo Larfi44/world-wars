@@ -6,7 +6,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// ========== STATE ==========
+// ---- STATE ----
 let gameState = 'menu';
 let scenario = 1;
 let playerCountry = null;
@@ -19,6 +19,9 @@ let aiTimer = 0;
 let gameTime = 0;
 let spectatorMode = false;
 let explorationMode = true;
+// ========== STAT HISTORY ==========
+let statHistory = [];
+let statRecordTimer = 0;
 
 // WW2 historical triggers
 let ww2FranceUKAttacked = false;
@@ -27,12 +30,18 @@ let ww2USSRattackedPoland = false;
 let ww2GermanyAttackedUSSR = false;
 let ww2FranceUKAttackTime = 0;
 
+// ========== CUSTOM MAP ==========
+const CUSTOM_MAP_W = 1200;
+const CUSTOM_MAP_H = 900;
+
 // ========== CONSTANTS ==========
 const MAP_W = 2400;
 const MAP_H = 1700;
 const CELL = 10;
 const COLS = Math.floor(MAP_W / CELL);
 const ROWS = Math.floor(MAP_H / CELL);
+const CUSTOM_COLS = Math.floor(CUSTOM_MAP_W / CELL);
+const CUSTOM_ROWS = Math.floor(CUSTOM_MAP_H / CELL);
 
 let camera = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 0.55 };
 let grid = [];
@@ -41,6 +50,8 @@ let mapCtx = mapCanvas.getContext('2d');
 mapCanvas.width = MAP_W;
 mapCanvas.height = MAP_H;
 let mapDirty = true;
+
+let useLandscape = false;
 
 // ========== COUNTRY DEFINITIONS ==========
 const allCountryDefs = [
@@ -70,7 +81,7 @@ const allCountryDefs = [
   },
   {
     id: 3,
-    name: 'USSR',
+    name: 'Russia',
     color: '#dc2626',
     ideology: 'Communism',
     leader: 'Joseph Stalin',
@@ -140,6 +151,38 @@ const allCountryDefs = [
     leader: 'Mehmed VI',
     leaderImg: null,
   },
+  {
+    id: 12,
+    name: 'Red',
+    color: '#dc2626',
+    ideology: '-',
+    leader: 'Red Commander',
+    leaderImg: null,
+  },
+  {
+    id: 13,
+    name: 'Blue',
+    color: '#2563eb',
+    ideology: '-',
+    leader: 'Blue Commander',
+    leaderImg: null,
+  },
+  {
+    id: 14,
+    name: 'Yellow',
+    color: '#eab308',
+    ideology: '-',
+    leader: 'Yellow Commander',
+    leaderImg: null,
+  },
+  {
+    id: 15,
+    name: 'Green',
+    color: '#16a34a',
+    ideology: '-',
+    leader: 'Green Commander',
+    leaderImg: null,
+  },
 ];
 
 let countries = [];
@@ -149,24 +192,24 @@ let activeCountries = [];
 // ========== FLAG IMAGES ==========
 const flagImages = {};
 const flagMap = {
-  0: { 1: 'flags/france.jpg', 3: 'flags/france.jpg' }, // France
-  1: { 1: 'flags/britain.png', 3: 'flags/britain.png' }, // UK
-  2: { 1: 'flags/nazi.png', 2: 'flags/nazi.png', 3: 'flags/german_empire.jpg' }, // Germany
+  0: { 1: 'flags/france.jpg', 3: 'flags/france.jpg' },
+  1: { 1: 'flags/britain.png', 3: 'flags/britain.png' },
+  2: { 1: 'flags/nazi.png', 2: 'flags/nazi.png', 3: 'flags/german_empire.jpg' },
   3: {
     1: 'flags/ussr.png',
     2: 'flags/ussr.png',
     3: 'flags/russian_empire.png',
-  }, // Russia/USSR
-  4: { 1: 'flags/fascist_italy.jpg', 3: 'flags/italy.png' }, // Italy
-  6: { 1: 'flags/spain.png', 3: 'flags/spain.png' }, // Spain
-  9: { 1: 'flags/yugoslavia.png', 3: 'flags/yugoslavia.png' }, // Yugoslavia
-  10: { 3: 'flags/austro-hungria.png' }, // Austria-Hungary
-  11: { 3: 'flags/osman_empire.jpg' }, // Ottoman Empire
+  },
+  4: { 1: 'flags/fascist_italy.jpg', 3: 'flags/italy.png' },
+  6: { 1: 'flags/spain.png', 3: 'flags/spain.png' },
+  9: { 1: 'flags/yugoslavia.png', 3: 'flags/yugoslavia.png' },
+  10: { 3: 'flags/austro-hungria.png' },
+  11: { 3: 'flags/osman_empire.jpg' },
 };
 
 function getFlagPath(cid) {
+  if (cid >= 12) return null;
   if (flagMap[cid] && flagMap[cid][scenario]) return flagMap[cid][scenario];
-  // fallback: try any scenario
   if (flagMap[cid]) {
     const keys = Object.keys(flagMap[cid]);
     if (keys.length) return flagMap[cid][keys[0]];
@@ -176,11 +219,8 @@ function getFlagPath(cid) {
 
 function loadFlags() {
   const toLoad = new Set();
-  for (const cid in flagMap) {
-    for (const s in flagMap[cid]) {
-      toLoad.add(flagMap[cid][s]);
-    }
-  }
+  for (const cid in flagMap)
+    for (const s in flagMap[cid]) toLoad.add(flagMap[cid][s]);
   for (const path of toLoad) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -192,7 +232,6 @@ loadFlags();
 
 // ========== SEA POLYGONS ==========
 const seaPolys = [
-  // Atlantic Ocean (west of Europe)
   [
     [0, 0],
     [200, 0],
@@ -203,7 +242,6 @@ const seaPolys = [
     [50, 750],
     [0, 850],
   ],
-  // Atlantic Ocean (SW)
   [
     [0, 850],
     [100, 820],
@@ -214,7 +252,6 @@ const seaPolys = [
     [120, 1350],
     [0, 1400],
   ],
-  // North Sea
   [
     [200, 0],
     [560, 0],
@@ -228,7 +265,6 @@ const seaPolys = [
     [170, 160],
     [180, 100],
   ],
-  // Baltic Sea
   [
     [860, 100],
     [1020, 80],
@@ -242,7 +278,6 @@ const seaPolys = [
     [800, 220],
     [820, 140],
   ],
-  // Mediterranean Sea
   [
     [220, 850],
     [340, 840],
@@ -272,7 +307,6 @@ const seaPolys = [
     [180, 1050],
     [200, 960],
   ],
-  // Black Sea
   [
     [1500, 700],
     [1660, 680],
@@ -287,7 +321,6 @@ const seaPolys = [
     [1460, 840],
     [1480, 760],
   ],
-  // Adriatic Sea
   [
     [720, 900],
     [820, 880],
@@ -300,7 +333,6 @@ const seaPolys = [
     [680, 1020],
     [700, 960],
   ],
-  // Aegean Sea
   [
     [1280, 1120],
     [1360, 1100],
@@ -312,7 +344,6 @@ const seaPolys = [
     [1240, 1220],
     [1260, 1160],
   ],
-  // Sea between UK and Ireland (west of UK)
   [
     [120, 180],
     [160, 200],
@@ -323,7 +354,6 @@ const seaPolys = [
     [60, 240],
     [80, 200],
   ],
-  // Caspian Sea
   [
     [1920, 660],
     [2000, 640],
@@ -335,7 +365,6 @@ const seaPolys = [
     [1900, 780],
     [1900, 720],
   ],
-  // Gulf of Bothnia
   [
     [900, 60],
     [980, 40],
@@ -347,7 +376,6 @@ const seaPolys = [
     [860, 120],
   ],
 ];
-
 const mountainPolys = [
   [
     [640, 550],
@@ -356,7 +384,7 @@ const mountainPolys = [
     [800, 640],
     [720, 670],
     [630, 620],
-  ], // Alps
+  ],
   [
     [400, 880],
     [480, 850],
@@ -364,7 +392,7 @@ const mountainPolys = [
     [490, 950],
     [420, 960],
     [380, 920],
-  ], // Pyrenees
+  ],
   [
     [780, 780],
     [820, 740],
@@ -372,7 +400,7 @@ const mountainPolys = [
     [860, 860],
     [820, 920],
     [770, 890],
-  ], // Apennines
+  ],
   [
     [620, 140],
     [700, 120],
@@ -380,7 +408,7 @@ const mountainPolys = [
     [740, 260],
     [660, 300],
     [600, 240],
-  ], // Scandinavian mountains
+  ],
   [
     [1100, 1060],
     [1180, 1020],
@@ -388,7 +416,7 @@ const mountainPolys = [
     [1200, 1160],
     [1120, 1180],
     [1060, 1120],
-  ], // Balkans
+  ],
   [
     [1700, 600],
     [1780, 560],
@@ -396,7 +424,7 @@ const mountainPolys = [
     [1800, 680],
     [1720, 700],
     [1660, 660],
-  ], // Urals
+  ],
   [
     [1900, 200],
     [1940, 160],
@@ -404,10 +432,9 @@ const mountainPolys = [
     [1960, 360],
     [1900, 400],
     [1860, 340],
-  ], // Finland/Russia north
+  ],
 ];
 
-// ========== BORDERS ==========
 const countryBorders = {
   France: [
     [360, 500],
@@ -572,25 +599,129 @@ const countryBorders = {
   ],
 };
 
-// ========== CITIES ==========
 let cities = [];
 let armies = [];
 let selArmy = null;
 let selArmies = new Set();
 let lastCity = null;
-let lastArmy = null;
+let selCities = new Set();
 
-// ========== TOUCH STATE ==========
-let touchState = {
-  touches: [],
-  startTime: 0,
-  startPos: null,
-  moved: false,
-  isPanning: false,
-  isPinching: false,
-  panStart: { x: 0, y: 0, cx: 0, cy: 0 },
-  lastPinchDist: 0,
-};
+// ========== SELECTION SNIPPETS ==========
+let snippets = [];
+for (let i = 0; i < 10; i++) snippets.push(null);
+
+function getSelectedArmyIds() {
+  const ids = new Set();
+  if (selArmy) ids.add(selArmy.id);
+  for (const sa of selArmies)
+    if (!sa.dead && sa.cid === playerCountry) ids.add(sa.id);
+  return ids;
+}
+function getSelectedCityIds() {
+  const ids = new Set();
+  if (lastCity) ids.add(lastCity.id);
+  for (const sc of selCities) if (sc.cid === playerCountry) ids.add(sc.id);
+  return ids;
+}
+
+function saveSnippet(slot) {
+  const armyIds = getSelectedArmyIds(),
+    cityIds = getSelectedCityIds();
+  if (armyIds.size === 0 && cityIds.size === 0) {
+    notify('Nothing selected to save!');
+    return;
+  }
+  snippets[slot] = { name: `Slot ${slot}`, armyIds, cityIds };
+  updateSnippetBar();
+  notify(`Saved selection to slot ${slot}`);
+}
+function loadSnippet(slot) {
+  const s = snippets[slot];
+  if (!s) {
+    notify('Slot is empty!');
+    return;
+  }
+  selArmy = null;
+  selArmies.clear();
+  selCities.clear();
+  lastCity = null;
+  for (const id of s.armyIds) {
+    const a = armies.find(
+      (ar) => ar.id === id && !ar.dead && ar.cid === playerCountry,
+    );
+    if (a) selArmies.add(a);
+  }
+  for (const id of s.cityIds) {
+    const c = cities.find((ct) => ct.id === id && ct.cid === playerCountry);
+    if (c) selCities.add(c);
+  }
+  if (selArmies.size === 1) {
+    selArmy = [...selArmies][0];
+    selArmies.clear();
+  }
+  if (selCities.size === 1) {
+    lastCity = [...selCities][0];
+    selCities.clear();
+  }
+  notify(`Loaded slot ${s.name || slot}`);
+}
+function deleteSnippet(slot) {
+  if (!snippets[slot]) {
+    notify('Slot is empty!');
+    return;
+  }
+  snippets[slot] = null;
+  updateSnippetBar();
+  notify(`Deleted slot ${slot}`);
+}
+function promptRenameSnippet(slot) {
+  if (!snippets[slot]) {
+    notify('Slot is empty!');
+    return;
+  }
+  const newName = prompt(
+    'Name this snippet:',
+    snippets[slot].name || `Slot ${slot}`,
+  );
+  if (newName && newName.trim()) {
+    snippets[slot].name = newName.trim();
+    updateSnippetBar();
+    notify(`Renamed to "${newName.trim()}"`);
+  }
+}
+function updateSnippetBar() {
+  const bar = document.getElementById('snippet-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    if (snippets[i] === null) continue;
+    const s = snippets[i];
+    const wrap = document.createElement('div');
+    wrap.className = 'snippet-wrap';
+    const btn = document.createElement('button');
+    btn.className = 'snippet-btn';
+    btn.textContent = `${i}: ${s.name}`;
+    btn.onclick = () => loadSnippet(i);
+    const nameBtn = document.createElement('button');
+    nameBtn.className = 'snippet-name-btn';
+    nameBtn.textContent = '✏️';
+    nameBtn.onclick = (e) => {
+      e.stopPropagation();
+      promptRenameSnippet(i);
+    };
+    const delBtn = document.createElement('button');
+    delBtn.className = 'snippet-del-btn';
+    delBtn.textContent = '✕';
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteSnippet(i);
+    };
+    wrap.appendChild(btn);
+    wrap.appendChild(nameBtn);
+    wrap.appendChild(delBtn);
+    bar.appendChild(wrap);
+  }
+}
 
 // ========== CLASSES ==========
 class City {
@@ -604,7 +735,7 @@ class City {
     this.inc = 10;
   }
   get income() {
-    return this.inc * this.lvl;
+    return Math.floor((this.inc * this.lvl) / 2);
   }
   upgrade() {
     if (this.lvl >= 3 || countries[this.cid].money < 100 * this.lvl)
@@ -615,7 +746,6 @@ class City {
     return true;
   }
 }
-
 class Army {
   constructor(id, cid, x, y, str = 100, maxStr = 100) {
     this.id = id;
@@ -635,18 +765,16 @@ class Army {
     this.garrison = false;
   }
   get size() {
-    return 1.5 + (this.maxStr / 250) * 3;
+    return 3 + (this.maxStr / 250) * 6;
   }
   get power() {
     return Math.floor(this.str * (this.morale / 100) * (this.maxStr / 100));
   }
-  isSurrounded() {
-    return false;
-  }
   getEffectiveSpeed() {
     let spd = this.spd;
-    const gx = Math.floor(this.x / CELL);
-    const gy = Math.floor(this.y / CELL);
+    spd *= Math.max(0.6, 1 - (this.maxStr / 500) * 0.4);
+    const gx = Math.floor(this.x / CELL),
+      gy = Math.floor(this.y / CELL);
     const cell = grid[gy]?.[gx];
     if (cell?.terrain === 'mtn') spd *= 0.3;
     if (
@@ -658,9 +786,6 @@ class Army {
       spd *= 0.7;
     return spd;
   }
-  getCombatModifier() {
-    return 1.0;
-  }
   upgrade() {
     if (countries[this.cid].money < 50 || this.maxStr >= 250) return false;
     countries[this.cid].money -= 50;
@@ -670,7 +795,6 @@ class Army {
   }
 }
 
-// ========== UTILITY FUNCTIONS ==========
 function inPoly(x, y, p) {
   if (!p || p.length < 3) return false;
   let i = false;
@@ -683,13 +807,11 @@ function inPoly(x, y, p) {
   }
   return i;
 }
-
 function dist(x1, y1, x2, y2) {
   return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
 }
 
 function getTerrain(x, y) {
-  // Check sea first (sea takes priority)
   for (let sp of seaPolys) {
     if (inPoly(x, y, sp)) return 'sea';
   }
@@ -698,23 +820,23 @@ function getTerrain(x, y) {
   }
   return 'land';
 }
-
 function isSea(x, y) {
   return getTerrain(x, y) === 'sea';
 }
 
 function getOwner(x, y) {
-  // If it's sea, no owner
   if (isSea(x, y)) return -1;
   for (let c of activeCountries) {
-    const b = countryBorders[c.name];
+    let borderKey = c.name;
+    if (c.id === 3 && scenario >= 1) borderKey = 'Russia';
+    const b = countryBorders[borderKey];
     if (b && inPoly(x, y, b)) return c.id;
   }
   return -1;
 }
 
 function atWar(a, b) {
-  return rels[a] && rels[a][b] <= -50 && rels[a][b] !== 0;
+  return rels[a] && rels[a][b] <= -50;
 }
 function allied(a, b) {
   return rels[a] && rels[a][b] >= 50;
@@ -723,22 +845,19 @@ function allied(a, b) {
 function canMove(army, gx, gy) {
   const c = grid[gy]?.[gx];
   if (!c) return false;
-  // Cannot move into sea
-  if (c.terrain === 'sea') return false;
+  if (c.terrain === 'sea' && !army.ships) return false;
   const o = c.owner;
   return (
     o === -1 || o === army.cid || allied(army.cid, o) || atWar(army.cid, o)
   );
 }
 
-// ========== PATHFINDING ==========
 function findPath(army, tx, ty) {
-  const sx = Math.floor(army.x / CELL);
-  const sy = Math.floor(army.y / CELL);
-  const ex = Math.floor(tx / CELL);
-  const ey = Math.floor(ty / CELL);
+  const sx = Math.floor(army.x / CELL),
+    sy = Math.floor(army.y / CELL),
+    ex = Math.floor(tx / CELL),
+    ey = Math.floor(ty / CELL);
   if (sx === ex && sy === ey) return null;
-
   const key = (x, y) => `${x},${y}`;
   const open = new Map();
   open.set(key(sx, sy), { x: sx, y: sy, g: 0, f: 0, p: null });
@@ -748,9 +867,12 @@ function findPath(army, tx, ty) {
     [-1, 0],
     [0, 1],
     [0, -1],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
   ];
   let iterations = 0;
-
   while (open.size && iterations < 5000) {
     iterations++;
     let cur = [...open.values()].reduce((a, b) => (a.f < b.f ? a : b));
@@ -766,147 +888,135 @@ function findPath(army, tx, ty) {
     open.delete(key(cur.x, cur.y));
     closed.add(key(cur.x, cur.y));
     for (let [dx, dy] of dirs) {
-      const nx = cur.x + dx;
-      const ny = cur.y + dy;
-      const nk = key(nx, ny);
+      const nx = cur.x + dx,
+        ny = cur.y + dy,
+        nk = key(nx, ny);
       if (closed.has(nk) || !canMove(army, nx, ny)) continue;
       const c = grid[ny][nx];
-      let cost = 1;
+      let cost = Math.sqrt(dx * dx + dy * dy);
       if (c.terrain === 'mtn') cost *= 4;
-      const g = cur.g + cost;
-      const f = g + Math.hypot(nx - ex, ny - ey);
-      if (!open.has(nk) || g < open.get(nk).g) {
+      const g = cur.g + cost,
+        f = g + Math.hypot(nx - ex, ny - ey);
+      if (!open.has(nk) || g < open.get(nk).g)
         open.set(nk, { x: nx, y: ny, g, f, p: cur });
-      }
     }
   }
   return null;
 }
 
-// ========== GRID & MAP ==========
 function initGrid() {
+  const cols = scenario === 4 || scenario === 5 ? CUSTOM_COLS : COLS;
+  const rows = scenario === 4 || scenario === 5 ? CUSTOM_ROWS : ROWS;
   grid = [];
-  for (let y = 0; y < ROWS; y++) {
+  for (let y = 0; y < rows; y++) {
     grid[y] = [];
-    for (let x = 0; x < COLS; x++) {
-      const wx = x * CELL + CELL / 2;
-      const wy = y * CELL + CELL / 2;
-      grid[y][x] = {
-        terrain: getTerrain(wx, wy),
-        owner: getOwner(wx, wy),
-        occupier: null,
-      };
+    for (let x = 0; x < cols; x++) {
+      const wx = x * CELL + CELL / 2,
+        wy = y * CELL + CELL / 2;
+      let terrain = 'land';
+      if (scenario !== 4 && scenario !== 5) terrain = getTerrain(wx, wy);
+      grid[y][x] = { terrain, owner: -1, occupier: null };
     }
   }
 }
 
 function drawMap() {
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
+  const rows = grid.length,
+    cols = grid[0].length;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
       const c = grid[y][x];
       let color;
       if (c.terrain === 'sea') {
-        // Blue gradient based on depth (y position)
-        const depthFactor = y / ROWS;
-        const r = Math.floor(10 + depthFactor * 15);
-        const g = Math.floor(40 + depthFactor * 30);
-        const b = Math.floor(100 + depthFactor * 60);
-        color = `rgb(${r},${g},${b})`;
-      } else if (c.terrain === 'mtn') {
-        color = '#5c4a3a';
-      } else if (c.owner >= 0 && c.owner < countries.length) {
-        const country = countries[c.owner];
-        color = country.color;
+        const df = y / rows;
+        color = `rgb(${Math.floor(10 + df * 15)},${Math.floor(40 + df * 30)},${Math.floor(100 + df * 60)})`;
+      } else if (c.terrain === 'mtn') color = '#5c4a3a';
+      else if (c.owner >= 0 && c.owner < countries.length) {
+        color = countries[c.owner].color;
         if (c.occupier !== null && c.occupier !== c.owner) {
-          const bColor = countries[c.owner].color;
-          const oColor = countries[c.occupier].color;
+          const oc = countries[c.occupier]?.color || '#888';
+          const blend = (a, b) => {
+            const ai = parseInt(a, 16),
+              bi = parseInt(b, 16);
+            return Math.round((ai + bi) / 2)
+              .toString(16)
+              .padStart(2, '0');
+          };
           color =
             '#' +
-            [1, 3, 5]
-              .map((i) =>
-                Math.round(
-                  (parseInt(bColor[i] + bColor[i + 1], 16) +
-                    parseInt(oColor[i] + oColor[i + 1], 16)) /
-                    2,
-                )
-                  .toString(16)
-                  .padStart(2, '0'),
-              )
-              .join('');
+            blend(color[1] + color[2], oc[1] + oc[2]) +
+            blend(color[3] + color[4], oc[3] + oc[4]) +
+            blend(color[5] + color[6], oc[5] + oc[6]);
         }
-      } else {
-        color = '#3a3528';
-      }
+      } else color = '#3a3528';
       mapCtx.fillStyle = color;
       mapCtx.fillRect(x * CELL, y * CELL, CELL, CELL);
     }
   }
-
-  // Draw wave lines on sea
-  mapCtx.strokeStyle = 'rgba(255,255,255,0.04)';
-  mapCtx.lineWidth = 1;
-  for (let wy = 0; wy < ROWS; wy += 8) {
-    for (let wx = 0; wx < COLS; wx += 6) {
-      if (grid[wy]?.[wx]?.terrain === 'sea') {
-        const px = wx * CELL;
-        const py = wy * CELL;
-        mapCtx.beginPath();
-        mapCtx.arc(px, py, 3, 0, Math.PI * 2);
-        mapCtx.stroke();
-      }
+  // Draw borders
+  if (scenario !== 4 && scenario !== 5) {
+    mapCtx.strokeStyle = 'rgba(255,255,255,0.25)';
+    mapCtx.lineWidth = 2;
+    for (let c of activeCountries) {
+      let borderKey = c.name;
+      if (c.id === 3 && scenario >= 1) borderKey = 'Russia';
+      const b = countryBorders[borderKey];
+      if (!b) continue;
+      mapCtx.beginPath();
+      mapCtx.moveTo(b[0][0], b[0][1]);
+      for (let i = 1; i < b.length; i++) mapCtx.lineTo(b[i][0], b[i][1]);
+      mapCtx.closePath();
+      mapCtx.stroke();
     }
   }
-
-  // Draw country borders
-  mapCtx.strokeStyle = 'rgba(255,255,255,0.25)';
-  mapCtx.lineWidth = 2;
-  for (let c of activeCountries) {
-    const b = countryBorders[c.name];
-    if (!b) continue;
-    mapCtx.beginPath();
-    mapCtx.moveTo(b[0][0], b[0][1]);
-    for (let i = 1; i < b.length; i++) mapCtx.lineTo(b[i][0], b[i][1]);
-    mapCtx.closePath();
-    mapCtx.stroke();
-  }
-
   mapDirty = false;
 }
 
 function paint(army, r = 30) {
-  const gx = Math.floor(army.x / CELL);
-  const gy = Math.floor(army.y / CELL);
-  const cr = Math.ceil(r / CELL);
+  const gx = Math.floor(army.x / CELL),
+    gy = Math.floor(army.y / CELL),
+    cr = Math.ceil(r / CELL);
+  let changed = false;
   for (let dy = -cr; dy <= cr; dy++) {
     for (let dx = -cr; dx <= cr; dx++) {
       if (dx * dx + dy * dy > cr * cr) continue;
-      const nx = gx + dx;
-      const ny = gy + dy;
-      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+      const nx = gx + dx,
+        ny = gy + dy;
+      if (nx < 0 || nx >= grid[0].length || ny < 0 || ny >= grid.length)
+        continue;
       const c = grid[ny][nx];
       if (c.terrain === 'sea' || c.terrain === 'mtn') continue;
-      if (c.owner !== -1 && c.owner !== army.cid && !atWar(army.cid, c.owner))
+      if (c.owner === -1) {
+        c.owner = army.cid;
+        c.occupier = null;
+        changed = true;
         continue;
-      if (c.owner === army.cid) c.occupier = null;
-      else if (c.owner !== -1) c.occupier = army.cid;
+      }
+      if (c.owner !== army.cid && !atWar(army.cid, c.owner)) continue;
+      if (c.owner === army.cid) {
+        if (c.occupier !== null) {
+          c.occupier = null;
+          changed = true;
+        }
+      } else if (c.owner !== -1) {
+        if (c.occupier !== army.cid) {
+          c.occupier = army.cid;
+          changed = true;
+        }
+      }
     }
   }
-  mapDirty = true;
+  if (changed) mapDirty = true;
 }
 
 function captureCity(city, newO) {
   if (city.cid === newO) return;
   const oldO = city.cid;
   city.cid = newO;
-  // Clear any enemy occupation paint from captured city's territory
-  for (let y = 0; y < ROWS; y++)
-    for (let x = 0; x < COLS; x++)
-      if (grid[y][x].occupier !== null && grid[y][x].owner === newO)
-        grid[y][x].occupier = null;
   const remaining = cities.filter((c) => c.cid === oldO);
   if (remaining.length === 0 && oldO >= 0) {
-    for (let y = 0; y < ROWS; y++)
-      for (let x = 0; x < COLS; x++)
+    for (let y = 0; y < grid.length; y++)
+      for (let x = 0; x < grid[y].length; x++)
         if (grid[y][x].owner === oldO && !allied(newO, oldO)) {
           grid[y][x].owner = newO;
           grid[y][x].occupier = null;
@@ -919,48 +1029,48 @@ function captureCity(city, newO) {
   notify(`${countries[newO].name} captured ${city.name}!`);
 }
 
-// ========== COMBAT ==========
 function combat(a1, a2) {
-  const bp1 = a1.power * (0.8 + Math.random() * 0.4);
-  const bp2 = a2.power * (0.8 + Math.random() * 0.4);
+  const bp1 = a1.power * (0.8 + Math.random() * 0.4),
+    bp2 = a2.power * (0.8 + Math.random() * 0.4);
+  const angle = Math.atan2(a2.y - a1.y, a2.x - a1.x);
   if (bp1 >= bp2) {
-    a2.str -= Math.floor(bp1 * 0.6);
-    a1.str -= Math.floor(bp2 * 0.2);
-    a1.morale = Math.max(30, a1.morale - 2);
-    a2.morale = Math.max(0, a2.morale - 30);
-    a1.knockX += Math.cos(Math.atan2(a2.y - a1.y, a2.x - a1.x)) * 8;
-    a1.knockY += Math.sin(Math.atan2(a2.y - a1.y, a2.x - a1.x)) * 8;
-    a2.knockX -= Math.cos(Math.atan2(a2.y - a1.y, a2.x - a1.x)) * 20;
-    a2.knockY -= Math.sin(Math.atan2(a2.y - a1.y, a2.x - a1.x)) * 20;
+    a2.str -= Math.floor(bp1 * 0.25);
+    a1.str -= Math.floor(bp2 * 0.08);
+    a1.morale = Math.max(30, a1.morale - 1);
+    a2.morale = Math.max(0, a2.morale - 12);
+    a2.knockX += Math.cos(angle) * 15;
+    a2.knockY += Math.sin(angle) * 15;
+    a1.knockX -= Math.cos(angle) * 3;
+    a1.knockY -= Math.sin(angle) * 3;
     if (a2.str <= 0) {
       a2.dead = true;
       a2.str = 0;
     }
   } else {
-    a1.str -= Math.floor(bp2 * 0.6);
-    a2.str -= Math.floor(bp1 * 0.2);
-    a2.morale = Math.max(30, a2.morale - 2);
-    a1.morale = Math.max(0, a1.morale - 30);
-    a2.knockX += Math.cos(Math.atan2(a1.y - a2.y, a1.x - a2.x)) * 8;
-    a2.knockY += Math.sin(Math.atan2(a1.y - a2.y, a1.x - a2.x)) * 8;
-    a1.knockX -= Math.cos(Math.atan2(a1.y - a2.y, a1.x - a2.x)) * 20;
-    a1.knockY -= Math.sin(Math.atan2(a1.y - a2.y, a1.x - a2.x)) * 20;
+    a1.str -= Math.floor(bp2 * 0.25);
+    a2.str -= Math.floor(bp1 * 0.08);
+    a2.morale = Math.max(30, a2.morale - 1);
+    a1.morale = Math.max(0, a1.morale - 12);
+    a1.knockX -= Math.cos(angle) * 15;
+    a1.knockY -= Math.sin(angle) * 15;
+    a2.knockX += Math.cos(angle) * 3;
+    a2.knockY += Math.sin(angle) * 3;
     if (a1.str <= 0) {
       a1.dead = true;
       a1.str = 0;
     }
   }
-  a1.ctimer = 0.2;
-  a2.ctimer = 0.2;
+  a1.ctimer = 0.5;
+  a2.ctimer = 0.5;
 }
 
 function combatUpdate() {
   const buckets = new Map();
   for (let a of armies) {
     if (a.dead) continue;
-    const bx = Math.floor(a.x / 200);
-    const by = Math.floor(a.y / 200);
-    const key = `${bx},${by}`;
+    const bx = Math.floor(a.x / 200),
+      by = Math.floor(a.y / 200),
+      key = `${bx},${by}`;
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(a);
   }
@@ -972,9 +1082,7 @@ function combatUpdate() {
         const b = list[j];
         if (b.dead || b.ctimer > 0) continue;
         if (a.cid === b.cid || !atWar(a.cid, b.cid)) continue;
-        if (dist(a.x, a.y, b.x, b.y) < a.size + b.size + 5) {
-          combat(a, b);
-        }
+        if (dist(a.x, a.y, b.x, b.y) < a.size + b.size + 5) combat(a, b);
       }
     }
   }
@@ -983,8 +1091,8 @@ function combatUpdate() {
 function mergeArmies(ams) {
   if (ams.length < 2) return;
   const b = ams[0];
-  let ts = b.str;
-  let tm = b.maxStr;
+  let ts = b.str,
+    tm = b.maxStr;
   for (let i = 1; i < ams.length; i++) {
     ts += ams[i].str;
     tm += ams[i].maxStr;
@@ -1001,50 +1109,85 @@ function splitArmy(a) {
     notify('Too weak!');
     return;
   }
-  const h = Math.floor(a.str / 2);
-  const hm = Math.floor(a.maxStr / 2);
+  const h = Math.floor(a.str / 2),
+    hm = Math.floor(a.maxStr / 2);
   a.str = h;
   a.maxStr = hm;
   armies.push(new Army(armies.length, a.cid, a.x + 12, a.y + 12, h, hm));
   notify('Army split!');
 }
 
-// ========== HELPER: check if army is visible to player ==========
 function isArmyVisible(a) {
+  if (spectatorMode) return true;
   if (!explorationMode) return true;
   if (a.cid === playerCountry || allied(playerCountry, a.cid)) return true;
-  // Check distance to any of player's armies or cities
-  const visRange = 300; // visibility range in pixels
+  const visRange = 150;
   for (let pa of armies) {
-    if (pa.dead || pa.cid !== playerCountry) continue;
-    if (dist(pa.x, pa.y, a.x, a.y) < visRange) return true;
+    if (
+      !pa.dead &&
+      pa.cid === playerCountry &&
+      dist(pa.x, pa.y, a.x, a.y) < visRange
+    )
+      return true;
   }
   for (let pc of cities) {
-    if (pc.cid !== playerCountry) continue;
-    if (dist(pc.x, pc.y, a.x, a.y) < visRange) return true;
+    if (pc.cid === playerCountry && dist(pc.x, pc.y, a.x, a.y) < visRange)
+      return true;
   }
   return false;
+}
+
+function walkToMerge(selectedArmyIds) {
+  const ids = [...selectedArmyIds];
+  let cx = 0,
+    cy = 0,
+    count = 0;
+  for (const id of ids) {
+    const a = armies.find(
+      (ar) => ar.id === id && !ar.dead && ar.cid === playerCountry,
+    );
+    if (!a) continue;
+    cx += a.x;
+    cy += a.y;
+    count++;
+  }
+  if (count < 2) return;
+  cx /= count;
+  cy /= count;
+  let moved = 0;
+  for (const id of ids) {
+    const a = armies.find(
+      (ar) => ar.id === id && !ar.dead && ar.cid === playerCountry,
+    );
+    if (!a) continue;
+    if (!a.path) {
+      const p = findPath(
+        a,
+        cx - 5 + Math.random() * 10,
+        cy - 5 + Math.random() * 10,
+      );
+      if (p) {
+        a.path = p;
+        moved++;
+      }
+    }
+  }
+  if (moved > 0) notify('Moving armies together...');
+  else notify('Armies already moving');
 }
 
 // ========== DRAWING ==========
 function draw() {
   ctx.fillStyle = '#0a0a12';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Smooth camera
   camera.x += (camera.tx - camera.x) * 0.2;
   camera.y += (camera.ty - camera.y) * 0.2;
   camera.zoom += (camera.tz - camera.zoom) * 0.2;
-
   ctx.save();
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
-
-  // Draw map
   if (mapDirty) drawMap();
   ctx.drawImage(mapCanvas, 0, 0);
-
-  // Draw cities
   for (let c of cities) {
     const sz = 3 + c.lvl;
     ctx.beginPath();
@@ -1067,44 +1210,47 @@ function draw() {
       ctx.fillText('★'.repeat(c.lvl - 1), c.x, c.y + sz + 16);
     }
   }
-
-  // Draw armies with flags
   for (let a of armies) {
-    if (a.dead) continue;
-
-    // Exploration: hide non-visible enemy armies
-    if (!isArmyVisible(a)) continue;
-
+    if (a.dead || a.cid !== playerCountry || !a.path || a.path.length < 2)
+      continue;
+    const sel = a === selArmy || selArmies.has(a);
+    if (!sel) continue;
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(a.path[0].x, a.path[0].y);
+    for (let i = 1; i < a.path.length; i++)
+      ctx.lineTo(a.path[i].x, a.path[i].y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  for (let a of armies) {
+    if (a.dead || !isArmyVisible(a)) continue;
     const sel = a === selArmy || selArmies.has(a);
     const sz = a.size;
-
-    // Draw flag background circle
     const flagPath = getFlagPath(a.cid);
     const flagImg = flagPath ? flagImages[flagPath] : null;
-
     ctx.save();
     ctx.beginPath();
     ctx.arc(a.x, a.y, sz, 0, Math.PI * 2);
     ctx.clip();
-
+    if (a.ships) {
+      ctx.fillStyle = '#1e88e5';
+      ctx.fillRect(a.x - sz - 2, a.y - sz - 2, sz * 2 + 4, sz * 2 + 4);
+    }
     if (flagImg && flagImg.complete && flagImg.naturalWidth > 0) {
-      // Draw flag image clipped to circle
       ctx.drawImage(flagImg, a.x - sz, a.y - sz, sz * 2, sz * 2);
     } else {
-      // Fallback: colored circle
       ctx.fillStyle = countries[a.cid]?.color || '#888';
       ctx.fillRect(a.x - sz, a.y - sz, sz * 2, sz * 2);
     }
     ctx.restore();
-
-    // Outline
     ctx.beginPath();
     ctx.arc(a.x, a.y, sz, 0, Math.PI * 2);
     ctx.strokeStyle = sel ? '#ff0' : 'rgba(255,255,255,0.5)';
     ctx.lineWidth = sel ? 2.5 : 1;
     ctx.stroke();
-
-    // Selection glow
     if (sel) {
       ctx.beginPath();
       ctx.arc(a.x, a.y, sz + 3, 0, Math.PI * 2);
@@ -1112,111 +1258,41 @@ function draw() {
       ctx.lineWidth = 4;
       ctx.stroke();
     }
-
-    // Strength text (below the circle)
     ctx.fillStyle = '#fff';
     ctx.font = `bold ${Math.max(8, sz * 0.9)}px Arial`;
     ctx.textAlign = 'center';
     ctx.fillText(`${Math.floor(a.str)}`, a.x, a.y + sz + 8);
-
-    // Draw movement arrow to next path point
-    if (a.path && a.path.length > 0) {
-      const next = a.path[0];
-      const angle = Math.atan2(next.y - a.y, next.x - a.x);
-      const arrowLen = Math.min(sz + 10, dist(a.x, a.y, next.x, next.y) * 0.3);
-      const ax = a.x + Math.cos(angle) * (sz + 2);
-      const ay = a.y + Math.sin(angle) * (sz + 2);
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(
-        ax + Math.cos(angle) * arrowLen,
-        ay + Math.sin(angle) * arrowLen,
-      );
-      ctx.stroke();
-
-      // Arrow head
-      const headSize = 5;
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.beginPath();
-      ctx.moveTo(
-        ax + Math.cos(angle) * arrowLen,
-        ay + Math.sin(angle) * arrowLen,
-      );
-      ctx.lineTo(
-        ax + Math.cos(angle + 0.5) * (arrowLen - headSize),
-        ay + Math.sin(angle + 0.5) * (arrowLen - headSize),
-      );
-      ctx.lineTo(
-        ax + Math.cos(angle - 0.5) * (arrowLen - headSize),
-        ay + Math.sin(angle - 0.5) * (arrowLen - headSize),
-      );
-      ctx.closePath();
-      ctx.fill();
+    if (a.ships) {
+      ctx.fillStyle = '#64b5f6';
+      ctx.font = `bold ${Math.max(6, sz * 0.6)}px Arial`;
+      ctx.fillText('⚓', a.x, a.y - sz - 6);
     }
   }
-
-  // Draw minimap
-  drawMinimap();
-
+  if (selRectDragging && selRectStart && selRectEnd) {
+    const r = canvas.getBoundingClientRect();
+    const x1 = selRectStart.x,
+      y1 = selRectStart.y,
+      x2 = selRectEnd.x,
+      y2 = selRectEnd.y;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2 / camera.zoom;
+    ctx.setLineDash([5 / camera.zoom, 5 / camera.zoom]);
+    ctx.strokeRect(
+      (x1 - r.left - camera.x) / camera.zoom,
+      (y1 - r.top - camera.y) / camera.zoom,
+      (x2 - x1) / camera.zoom,
+      (y2 - y1) / camera.zoom,
+    );
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(
+      (x1 - r.left - camera.x) / camera.zoom,
+      (y1 - r.top - camera.y) / camera.zoom,
+      (x2 - x1) / camera.zoom,
+      (y2 - y1) / camera.zoom,
+    );
+  }
   ctx.restore();
-}
-
-// ========== MINIMAP ==========
-function drawMinimap() {
-  const mmW = 160;
-  const mmH = 113;
-  const mmX = canvas.width - mmW - 8;
-  const mmY = canvas.height - mmH - 8;
-  const margin = 4;
-
-  // Background
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(
-    mmX - margin,
-    mmY - margin,
-    mmW + margin * 2,
-    mmH + margin * 2,
-    6,
-  );
-  ctx.fill();
-  ctx.stroke();
-
-  // Draw map on minimap
-  const scaleX = mmW / MAP_W;
-  const scaleY = mmH / MAP_H;
-  const imgData = mapCtx.getImageData(0, 0, MAP_W, MAP_H);
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = mmW;
-  tempCanvas.height = mmH;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.putImageData(imgData, 0, 0);
-  ctx.drawImage(tempCanvas, mmX, mmY, mmW, mmH);
-
-  // Viewport rectangle
-  const vx = mmX + (-camera.x / camera.zoom) * scaleX;
-  const vy = mmY + (-camera.y / camera.zoom) * scaleY;
-  const vw = (canvas.width / camera.zoom) * scaleX;
-  const vh = (canvas.height / camera.zoom) * scaleY;
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(vx, vy, vw, vh);
-
-  // Player army dots
-  if (!spectatorMode && playerCountry >= 0) {
-    for (let a of armies) {
-      if (a.dead || a.cid !== playerCountry) continue;
-      ctx.fillStyle = '#ff0';
-      ctx.beginPath();
-      ctx.arc(mmX + a.x * scaleX, mmY + a.y * scaleY, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
 }
 
 // ========== GAME LOOP ==========
@@ -1224,86 +1300,71 @@ function update(dt) {
   if (paused) return;
   dt = Math.min(dt, 0.05);
   gameTime += dt;
-
-  // Income
   for (let c of activeCountries) {
     const own = cities.filter((ct) => ct.cid === c.id);
     c.money += own.reduce((s, ct) => s + ct.income, 0) * 0.18 * dt;
   }
-
-  // DP generation
   diplomacyTimer += dt;
   if (diplomacyTimer >= 0.5) {
     diplomacyTimer -= 0.5;
     for (let c of activeCountries) c.dp = Math.min(100, (c.dp || 0) + 3);
   }
-
-  // Clean dead armies
   armies = armies.filter((a) => !a.dead);
   if (selArmy?.dead) selArmy = null;
   for (let a of [...selArmies]) if (a.dead) selArmies.delete(a);
-  if (lastArmy?.dead) lastArmy = null;
-
-  // Knockback
   for (let a of armies) {
     if (Math.abs(a.knockX) > 0.1 || Math.abs(a.knockY) > 0.1) {
       a.x += a.knockX * dt * 5;
       a.y += a.knockY * dt * 5;
-      a.knockX *= 0.8;
-      a.knockY *= 0.8;
+      a.knockX *= 0.85;
+      a.knockY *= 0.85;
       if (Math.abs(a.knockX) < 0.1) a.knockX = 0;
       if (Math.abs(a.knockY) < 0.1) a.knockY = 0;
     }
     if (a.ctimer > 0) a.ctimer -= dt;
   }
-
   combatUpdate();
-
-  // City capture & movement
   for (let a of armies) {
     if (a.dead) continue;
     const nc = cities.find(
       (c) =>
-        dist(c.x, c.y, a.x, a.y) < 15 && c.cid !== a.cid && atWar(a.cid, c.cid),
+        dist(c.x, c.y, a.x, a.y) < 15 &&
+        c.cid !== a.cid &&
+        (c.cid === -1 || atWar(a.cid, c.cid)),
     );
     if (nc) captureCity(nc, a.cid);
-
     if (a.path?.length) {
-      const tgt = a.path[0];
-      const dx = tgt.x - a.x;
-      const dy = tgt.y - a.y;
-      const d = Math.sqrt(dx * dx + dy * dy);
+      const tgt = a.path[0],
+        dx = tgt.x - a.x,
+        dy = tgt.y - a.y,
+        d = Math.sqrt(dx * dx + dy * dy);
       if (d < 2) {
         a.path.shift();
         if (!a.path.length) a.path = null;
       } else {
-        const spd = a.getEffectiveSpeed();
-        const step = Math.min(d, spd * dt);
+        const spd = a.getEffectiveSpeed(),
+          step = Math.min(d, spd * dt);
         a.x += (dx / d) * step;
         a.y += (dy / d) * step;
         if (Math.random() < 0.05) paint(a, 25);
       }
     }
-
     if (a.morale < 100) a.morale = Math.min(100, a.morale + 5 * dt);
   }
-
   // Historical WW2 triggers
-  if (scenario === 1) {
-    // France and UK attack Germany after 45 seconds
+  if (scenario === 1 && gameState !== 'diplo') {
     if (!ww2FranceUKAttacked && gameTime > 45) {
       if (rels[0][2] > -50) {
         rels[0][2] = rels[2][0] = -60;
-        notify('⚔️ France declared war on Germany! (Historical)');
+        tickerNotify('⚔️ Historical: France declared war on Germany!');
       }
       if (rels[1][2] > -50) {
         rels[1][2] = rels[2][1] = -60;
-        notify('⚔️ UK declared war on Germany! (Historical)');
+        tickerNotify('⚔️ Historical: UK declared war on Germany!');
       }
       ww2FranceUKAttacked = true;
       ww2FranceUKAttackTime = gameTime;
     }
-    // Italy joins after 30 seconds from France/UK attack
     if (
       !ww2ItalyAttacked &&
       ww2FranceUKAttackTime > 0 &&
@@ -1311,121 +1372,252 @@ function update(dt) {
     ) {
       if (rels[4][0] > -50) {
         rels[4][0] = rels[0][4] = -60;
-        notify('⚔️ Italy declared war on France! (Historical)');
+        tickerNotify('⚔️ Historical: Italy declared war on France!');
       }
       if (rels[4][1] > -50) {
         rels[4][1] = rels[1][4] = -60;
-        notify('⚔️ Italy declared war on UK! (Historical)');
+        tickerNotify('⚔️ Historical: Italy declared war on UK!');
       }
       ww2ItalyAttacked = true;
     }
-    // USSR attacks Poland after 120 seconds
     if (
       !ww2USSRattackedPoland &&
-      gameTime > 120 &&
+      gameTime > 180 &&
       activeCountries.some((c) => c.id === 5)
     ) {
       if (rels[3][5] > -50) {
         rels[3][5] = rels[5][3] = -60;
-        notify('⚔️ USSR declared war on Poland! (Historical)');
+        tickerNotify('⚔️ Historical: USSR declared war on Poland!');
       }
       ww2USSRattackedPoland = true;
     }
-    // Germany attacks USSR after 240 seconds
     if (
       !ww2GermanyAttackedUSSR &&
-      gameTime > 240 &&
+      gameTime > 360 &&
       activeCountries.some((c) => c.id === 3)
     ) {
       if (rels[2][3] > -50) {
         rels[2][3] = rels[3][2] = -60;
-        notify('⚔️ Germany declared war on USSR! (Historical)');
+        tickerNotify('⚔️ Historical: Germany declared war on USSR!');
       }
       ww2GermanyAttackedUSSR = true;
     }
   }
-
-  // AI
+  // Record stats
+  statRecordTimer += dt;
+  if (statRecordTimer >= 5 && playerCountry >= 0 && !spectatorMode) {
+    statRecordTimer = 0;
+    const pc = playerCountry;
+    const myArmies = armies.filter((a) => a.cid === pc && !a.dead);
+    const power = myArmies.reduce((s, a) => s + a.power, 0);
+    let ownedCells = 0,
+      totalLandCells = 0;
+    for (let y = 0; y < grid.length; y++)
+      for (let x = 0; x < grid[y].length; x++)
+        if (grid[y][x].terrain === 'land') {
+          totalLandCells++;
+          if (grid[y][x].owner === pc) ownedCells++;
+        }
+    const terrPct =
+      totalLandCells > 0 ? Math.round((ownedCells / totalLandCells) * 100) : 0;
+    statHistory.push({
+      time: gameTime,
+      gold: Math.floor(countries[pc].money),
+      power,
+      territory: terrPct,
+      armies: myArmies.length,
+    });
+    if (statHistory.length > 200)
+      statHistory.splice(0, statHistory.length - 200);
+    drawHistoryCharts();
+  }
   aiTimer += dt;
   if (aiTimer >= 2.5) {
     aiTimer = 0;
     runAI();
   }
-
   refreshHUD();
 }
 
 function runAI() {
   for (let c of activeCountries) {
     if (c.id === playerCountry) continue;
-
     const oc = cities.filter((ct) => ct.cid === c.id);
+    const myArmies = armies.filter((a) => a.cid === c.id && !a.dead);
+    const enemies = activeCountries.filter((e) => atWar(c.id, e.id));
+    const isCustom = scenario === 4 || scenario === 5;
 
-    // Recruit if rich
+    // ===== ECONOMY =====
+    // Recruit more often, up to more armies
     if (
-      c.money > 120 &&
+      c.money > 100 &&
       oc.length &&
-      Math.random() < 0.3 &&
-      armies.filter((a) => a.cid === c.id && !a.dead).length < 15
+      Math.random() < 0.5 &&
+      myArmies.length < (isCustom ? 25 : 15)
     ) {
       const ct = oc[Math.floor(Math.random() * oc.length)];
       armies.push(
         new Army(
           armies.length,
           c.id,
-          ct.x + (Math.random() - 0.5) * 25,
-          ct.y + (Math.random() - 0.5) * 25,
+          ct.x + 25 + (Math.random() - 0.5) * 15,
+          ct.y + (Math.random() - 0.5) * 15,
         ),
       );
       c.money -= 100;
     }
-
-    const enemies = activeCountries.filter((e) => atWar(c.id, e.id));
-    const myArmies = armies.filter(
-      (a) => a.cid === c.id && !a.dead && !a.garrison && !a.path,
-    );
-
-    if (enemies.length) {
-      // Attack enemy cities
-      for (let a of myArmies.slice(0, 3)) {
-        const ec = cities.filter((ct) => enemies.some((e) => e.id === ct.cid));
-        if (ec.length) {
-          const tgt = ec[Math.floor(Math.random() * ec.length)];
-          const p = findPath(a, tgt.x, tgt.y);
-          if (p) a.path = p;
+    // Upgrade armies that have high strength
+    for (let a of myArmies) {
+      if (
+        c.money >= 50 &&
+        a.maxStr < 200 &&
+        a.str > a.maxStr * 0.8 &&
+        Math.random() < 0.2
+      ) {
+        a.upgrade();
+      }
+    }
+    // Buy fleets near sea
+    if (c.money > 150 && Math.random() < 0.15) {
+      const candidates = myArmies.filter((a) => !a.ships);
+      if (candidates.length) {
+        const candidate =
+          candidates[Math.floor(Math.random() * candidates.length)];
+        const gx = Math.floor(candidate.x / CELL),
+          gy = Math.floor(candidate.y / CELL);
+        let nearSea = false;
+        for (let dx = -4; dx <= 4 && !nearSea; dx++)
+          for (let dy = -4; dy <= 4 && !nearSea; dy++) {
+            const nx = gx + dx,
+              ny = gy + dy;
+            if (
+              nx >= 0 &&
+              nx < grid[0].length &&
+              ny >= 0 &&
+              ny < grid.length &&
+              grid[ny][nx].terrain === 'sea'
+            )
+              nearSea = true;
+          }
+        if (nearSea) {
+          candidate.ships = true;
+          c.money -= 60;
         }
       }
-    } else {
-      // Peacetime movement
-      if (
-        c.id === 3 &&
-        scenario === 1 &&
-        activeCountries.some((co) => co.id === 5)
-      ) {
-        // USSR moves toward Polish border
-        for (let a of myArmies.slice(0, 4)) {
-          const targetX = 1200 + Math.random() * 100;
-          const targetY = 400 + Math.random() * 100;
-          const p = findPath(a, targetX, targetY);
+    }
+
+    // ===== MILITARY TACTICS =====
+    const idleArmies = myArmies.filter((a) => !a.garrison && !a.path);
+    const frontierArmies = myArmies.filter((a) => !a.dead);
+
+    if (enemies.length) {
+      // Identify nearest enemy city as primary target
+      let targetCity = null;
+      let minDist = Infinity;
+      const enemyCities = cities.filter((ct) =>
+        enemies.some((e) => e.id === ct.cid),
+      );
+      if (enemyCities.length > 0) {
+        // Find closest enemy city to any of our armies
+        for (let a of idleArmies.slice(0, 15)) {
+          for (let ec of enemyCities) {
+            const d = dist(a.x, a.y, ec.x, ec.y);
+            if (d < minDist) {
+              minDist = d;
+              targetCity = ec;
+            }
+          }
+        }
+      }
+
+      if (targetCity) {
+        // Send armies to the target in waves
+        const attackers = idleArmies.slice(0, isCustom ? 6 : 3);
+        for (let a of attackers) {
+          // Spread around the target
+          const offsetX = (Math.random() - 0.5) * 60;
+          const offsetY = (Math.random() - 0.5) * 60;
+          const p = findPath(a, targetCity.x + offsetX, targetCity.y + offsetY);
           if (p) a.path = p;
         }
       } else {
-        for (let a of myArmies.slice(0, 2)) {
+        // No enemy cities known - attack nearest enemy army
+        const enemyArmies = armies.filter(
+          (a) => enemies.some((e) => e.id === a.cid) && !a.dead,
+        );
+        if (enemyArmies.length > 0 && idleArmies.length > 0) {
+          const nearest = enemyArmies
+            .slice(0, Math.min(enemyArmies.length, 10))
+            .sort(
+              (a, b) =>
+                dist(a.x, a.y, idleArmies[0].x, idleArmies[0].y) -
+                dist(b.x, b.y, idleArmies[0].x, idleArmies[0].y),
+            )[0];
+          if (nearest) {
+            for (let a of idleArmies.slice(0, isCustom ? 5 : 2)) {
+              const p = findPath(
+                a,
+                nearest.x + (Math.random() - 0.5) * 30,
+                nearest.y + (Math.random() - 0.5) * 30,
+              );
+              if (p) a.path = p;
+            }
+          }
+        }
+      }
+
+      // Merge nearby friendly armies for larger groups
+      if (isCustom && Math.random() < 0.3) {
+        for (let a of frontierArmies) {
+          if (a.dead || a.path) continue;
+          for (let other of frontierArmies) {
+            if (other.id === a.id || other.dead || other.path) continue;
+            if (dist(a.x, a.y, other.x, other.y) < 50) {
+              // One army goes toward the other
+              const p = findPath(
+                a,
+                other.x + (Math.random() - 0.5) * 10,
+                other.y + (Math.random() - 0.5) * 10,
+              );
+              if (p) {
+                a.path = p;
+                break;
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // No enemies: explore/expand
+      for (let a of idleArmies.slice(0, isCustom ? 4 : 2)) {
+        const unexploredCities = cities.filter((ct) => ct.cid === -1);
+        if (unexploredCities.length > 0) {
+          const tgt =
+            unexploredCities[
+              Math.floor(Math.random() * unexploredCities.length)
+            ];
+          const p = findPath(a, tgt.x, tgt.y);
+          if (p) a.path = p;
+        } else {
           const dirs = [
             [-60, 0],
             [60, 0],
             [0, -60],
             [0, 60],
+            [-40, -40],
+            [40, -40],
+            [-40, 40],
+            [40, 40],
           ];
-          const d = dirs[Math.floor(Math.random() * 4)];
-          const p = findPath(a, a.x + d[0] * 5, a.y + d[1] * 5);
+          const d = dirs[Math.floor(Math.random() * dirs.length)];
+          const p = findPath(a, a.x + d[0] * 3, a.y + d[1] * 3);
           if (p) a.path = p;
         }
       }
     }
 
-    // Diplomacy actions
-    if ((c.dp || 0) >= 20) {
+    // ===== DIPLOMACY =====
+    if ((c.dp || 0) >= 20)
       for (let o of activeCountries) {
         if (o.id === c.id) continue;
         const rel = rels[c.id][o.id] || 0;
@@ -1447,7 +1639,6 @@ function runAI() {
           tickerNotify(`⚔️ ${c.name} declared war on ${o.name}!`);
         }
       }
-    }
   }
 }
 
@@ -1459,25 +1650,25 @@ function refreshHUD() {
   const pc = playerCountry;
   document.getElementById('money-display').textContent = Math.floor(c.money);
   document.getElementById('dp-display').textContent = Math.floor(c.dp || 0);
-  const myCities = cities.filter((ct) => ct.cid === pc);
-  document.getElementById('city-display').textContent = myCities.length;
+  document.getElementById('city-display').textContent = cities.filter(
+    (ct) => ct.cid === pc,
+  ).length;
   const myArmies = armies.filter((a) => a.cid === pc && !a.dead);
   document.getElementById('army-display').textContent = myArmies.length;
-  // Army power (total strength)
-  const totalPower = myArmies.reduce((s, a) => s + a.power, 0);
-  document.getElementById('power-display').textContent = totalPower;
-  // Territory %
-  let ownedCells = 0;
-  let totalLandCells = 0;
-  for (let y = 0; y < ROWS; y++)
-    for (let x = 0; x < COLS; x++)
+  document.getElementById('power-display').textContent = myArmies.reduce(
+    (s, a) => s + a.power,
+    0,
+  );
+  let ownedCells = 0,
+    totalLandCells = 0;
+  for (let y = 0; y < grid.length; y++)
+    for (let x = 0; x < grid[y].length; x++)
       if (grid[y][x].terrain === 'land') {
         totalLandCells++;
         if (grid[y][x].owner === pc) ownedCells++;
       }
-  const pct =
-    totalLandCells > 0 ? Math.round((ownedCells / totalLandCells) * 100) : 0;
-  document.getElementById('territory-display').textContent = pct + '%';
+  document.getElementById('territory-display').textContent =
+    ownedCells + ' cells';
 }
 
 function notify(msg) {
@@ -1487,7 +1678,6 @@ function notify(msg) {
   document.body.appendChild(n);
   setTimeout(() => n.remove(), 2000);
 }
-
 function tickerNotify(msg) {
   const n = document.createElement('div');
   n.className = 'news-ticker';
@@ -1511,14 +1701,12 @@ function changeRel(tid, amt) {
   refreshHUD();
   updateDiploPanel();
 }
-
 function declareWar(tid) {
   if (spectatorMode || atWar(playerCountry, tid)) return;
   if ((countries[playerCountry].dp || 0) < 20) {
     notify('Need 20 DP!');
     return;
   }
-  // Require relations <= -50 to declare war
   const rel = rels[playerCountry][tid] || 0;
   if (rel > -50) {
     notify(`Relations too high (${rel}). Lower them to -50 or below first!`);
@@ -1533,10 +1721,12 @@ function declareWar(tid) {
   );
   updateDiploPanel();
 }
-
 function formAlliance(tid) {
-  if (spectatorMode || allied(playerCountry, tid)) return;
-  if (atWar(playerCountry, tid)) {
+  if (
+    spectatorMode ||
+    allied(playerCountry, tid) ||
+    atWar(playerCountry, tid)
+  ) {
     notify('Cannot ally enemy!');
     return;
   }
@@ -1544,7 +1734,6 @@ function formAlliance(tid) {
     notify('Need 30 DP!');
     return;
   }
-  // Require relations >= +50 to form alliance
   const rel = rels[playerCountry][tid] || 0;
   if (rel < 50) {
     notify(`Relations too low (${rel}). Raise them to +50 or higher first!`);
@@ -1559,7 +1748,6 @@ function formAlliance(tid) {
   );
   updateDiploPanel();
 }
-
 function offerPeace(tid) {
   if (spectatorMode || !atWar(playerCountry, tid)) return;
   if (Math.random() < 0.5) {
@@ -1569,7 +1757,6 @@ function offerPeace(tid) {
   } else notify('Rejected');
   updateDiploPanel();
 }
-
 function openDiplomacy() {
   wasPausedBeforeDiplo = paused;
   paused = true;
@@ -1578,7 +1765,6 @@ function openDiplomacy() {
   document.getElementById('pause-btn').textContent = '▶️';
   updateDiploPanel();
 }
-
 function closeDiplomacy() {
   document.getElementById('diplo-overlay').style.display = 'none';
   document.getElementById('diplo-panel').style.display = 'none';
@@ -1587,7 +1773,6 @@ function closeDiplomacy() {
     document.getElementById('pause-btn').textContent = '⏸️';
   }
 }
-
 function updateDiploPanel() {
   if (spectatorMode || playerCountry < 0) return;
   const c = document.getElementById('diplo-content');
@@ -1599,47 +1784,36 @@ function updateDiploPanel() {
     const ally = allied(playerCountry, ct.id);
     const d = document.createElement('div');
     d.className = 'diplo-entry';
-    d.innerHTML = `
-      <div class="header">
-        <span class="country-name" style="color:${ct.color}">
-          ${ct.name}
-          ${war ? '<span class="badge-war">WAR</span>' : ''}
-          ${ally ? '<span class="badge-ally">ALLY</span>' : ''}
-        </span>
-        <span class="rel-value">${rel > 0 ? '+' : ''}${rel}</span>
-      </div>
-      <div class="actions">
-        <button onclick="changeRel(${ct.id},10)" style="background:#2ecc71;">+10</button>
-        <button onclick="changeRel(${ct.id},-10)" style="background:#e74c3c;">-10</button>
-        ${!war && !ally ? `<button onclick="declareWar(${ct.id})" style="background:#c0392b;">⚔️WAR</button>` : ''}
-        ${!ally && !war ? `<button onclick="formAlliance(${ct.id})" style="background:#27ae60;">🤝ALLY</button>` : ''}
-        ${war ? `<button onclick="offerPeace(${ct.id})" style="background:#2980b9;">🕊️PEACE</button>` : ''}
-      </div>`;
+    d.innerHTML = `<div class="header"><span class="country-name" style="color:${ct.color}">${ct.name}${war ? '<span class="badge-war">WAR</span>' : ''}${ally ? '<span class="badge-ally">ALLY</span>' : ''}</span><span class="rel-value">${rel > 0 ? '+' : ''}${rel}</span></div><div class="actions"><button onclick="changeRel(${ct.id},10)" style="background:#2ecc71;">+10</button><button onclick="changeRel(${ct.id},-10)" style="background:#e74c3c;">-10</button>${!war && !ally ? `<button onclick="declareWar(${ct.id})" style="background:#c0392b;">⚔️WAR</button>` : ''}${!ally && !war ? `<button onclick="formAlliance(${ct.id})" style="background:#27ae60;">🤝ALLY</button>` : ''}${war ? `<button onclick="offerPeace(${ct.id})" style="background:#2980b9;">🕊️PEACE</button>` : ''}</div>`;
     c.appendChild(d);
   }
 }
 
 // ========== STATS PANEL ==========
+let wasPausedBeforeStats = false;
 function openStatsPanel() {
   if (spectatorMode || playerCountry < 0) return;
   const c = countries[playerCountry];
   if (!c) return;
-
   document.getElementById('stats-overlay').style.display = 'block';
   document.getElementById('stats-panel').style.display = 'block';
-
-  // Set flag
+  wasPausedBeforeStats = paused;
+  paused = true;
   const flagPath = getFlagPath(playerCountry);
   document.getElementById('stats-flag').src = flagPath || '';
-
-  // Set country name & ideology
+  if (!flagPath) {
+    document.getElementById('stats-flag').style.display = 'none';
+    document.getElementById('stats-flag-container').style.background =
+      countries[playerCountry]?.color || '#555';
+  } else {
+    document.getElementById('stats-flag').style.display = 'block';
+    document.getElementById('stats-flag-container').style.background =
+      'transparent';
+  }
   document.getElementById('stats-country-name').textContent = c.name;
   document.getElementById('stats-ideology').textContent =
     c.ideology || 'Unknown';
-
-  // Set leader
   const leaderName = c.leader || 'Unknown';
-  document.getElementById('stats-leader-name').textContent = leaderName;
   document.getElementById('stats-leader-label').textContent = leaderName;
   const leaderImg = document.getElementById('stats-leader-img');
   if (c.leaderImg) {
@@ -1648,81 +1822,84 @@ function openStatsPanel() {
   } else {
     leaderImg.style.display = 'none';
   }
-
-  updateStatsPanel();
+  drawHistoryCharts();
 }
-
 function closeStatsPanel() {
   document.getElementById('stats-overlay').style.display = 'none';
   document.getElementById('stats-panel').style.display = 'none';
+  if (!wasPausedBeforeStats) {
+    paused = false;
+    document.getElementById('pause-btn').textContent = '⏸️';
+  }
 }
 
-function updateStatsPanel() {
-  if (spectatorMode || playerCountry < 0) return;
-  const pc = playerCountry;
-  const c = countries[pc];
-
-  // Gold - use max of 2000 as 100%
-  const gold = Math.floor(c.money);
-  const goldMax = 2000;
-  document.getElementById('chart-gold').style.width =
-    Math.min(100, (gold / goldMax) * 100) + '%';
-  document.getElementById('chart-gold-val').textContent = gold;
-
-  // Army power - max 5000
-  const myArmies = armies.filter((a) => a.cid === pc && !a.dead);
-  const totalPower = myArmies.reduce((s, a) => s + a.power, 0);
-  const powerMax = 5000;
-  document.getElementById('chart-power').style.width =
-    Math.min(100, (totalPower / powerMax) * 100) + '%';
-  document.getElementById('chart-power-val').textContent = totalPower;
-
-  // Cities - max 15
-  const cityCount = cities.filter((ct) => ct.cid === pc).length;
-  const cityMax = 15;
-  document.getElementById('chart-cities').style.width =
-    Math.min(100, (cityCount / cityMax) * 100) + '%';
-  document.getElementById('chart-cities-val').textContent = cityCount;
-
-  // Army count - max 30
-  const armyCount = myArmies.length;
-  const armyMax = 30;
-  document.getElementById('chart-armies').style.width =
-    Math.min(100, (armyCount / armyMax) * 100) + '%';
-  document.getElementById('chart-armies-val').textContent = armyCount;
-
-  // Territory - max is cells from grid
-  let ownedCells = 0;
-  let totalLandCells = 0;
-  for (let y = 0; y < ROWS; y++)
-    for (let x = 0; x < COLS; x++)
-      if (grid[y][x].terrain === 'land') {
-        totalLandCells++;
-        if (grid[y][x].owner === pc) ownedCells++;
-      }
-  const pct =
-    totalLandCells > 0 ? Math.round((ownedCells / totalLandCells) * 100) : 0;
-  document.getElementById('chart-territory').style.width = pct + '%';
-  document.getElementById('chart-territory-val').textContent = pct + '%';
+function drawHistoryCharts() {
+  const chartIds = [
+    { id: 'hchart-gold', key: 'gold', color: '#ffd700' },
+    { id: 'hchart-power', key: 'power', color: '#e94560' },
+    { id: 'hchart-territory', key: 'territory', color: '#4ade80' },
+    { id: 'hchart-armies', key: 'armies', color: '#64b5f6' },
+  ];
+  for (const ci of chartIds) {
+    const canvas = document.getElementById(ci.id);
+    if (!canvas) continue;
+    const hctx = canvas.getContext('2d');
+    const W = canvas.width,
+      H = canvas.height;
+    const pad = 8;
+    const gw = W - pad * 2,
+      gh = H - pad * 2;
+    hctx.fillStyle = 'rgba(10,10,25,0.95)';
+    hctx.fillRect(0, 0, W, H);
+    if (statHistory.length < 2) {
+      hctx.fillStyle = '#555';
+      hctx.font = '10px Arial';
+      hctx.textAlign = 'center';
+      hctx.fillText('Collecting data...', W / 2, H / 2);
+      continue;
+    }
+    const data = statHistory;
+    let maxVal = Math.max(...data.map((d) => d[ci.key]), 1);
+    if (ci.key === 'territory') maxVal = 100;
+    hctx.strokeStyle = ci.color;
+    hctx.lineWidth = 1.5;
+    hctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      const x = pad + (i / (data.length - 1)) * gw;
+      const y = pad + gh - (data[i][ci.key] / maxVal) * gh;
+      if (i === 0) hctx.moveTo(x, y);
+      else hctx.lineTo(x, y);
+    }
+    hctx.stroke();
+  }
 }
 
 // ========== ACTIONS ==========
 function showActions(actions) {
   const p = document.getElementById('action-panel');
   p.innerHTML = '';
-  for (let a of actions) {
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i];
     const b = document.createElement('button');
     b.textContent = a.text;
     b.style.background = a.cl || '#555';
-    b.onclick = () => {
-      a.fn();
-      p.style.display = 'none';
-      refreshHUD();
-    };
+    b.setAttribute('data-idx', i);
+    b.onclick = (function (idx) {
+      return function () {
+        actions[idx].fn();
+        p.style.display = 'none';
+        refreshHUD();
+      };
+    })(i);
     p.appendChild(b);
   }
-  p.innerHTML +=
-    '<button onclick="document.getElementById(\'action-panel\').style.display=\'none\'" style="background:#e94560;">✕</button>';
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.background = '#e94560';
+  closeBtn.onclick = function () {
+    p.style.display = 'none';
+  };
+  p.appendChild(closeBtn);
   p.style.display = 'flex';
 }
 
@@ -1735,13 +1912,24 @@ function getWorld(cx, cy) {
   };
 }
 
-let mouseDownPos = null;
-let mouseDownTime = 0;
-let mouseDragging = false;
-let mouseDragStart = null;
-let mouseDragCam = null;
+let mouseDownPos = null,
+  mouseDownTime = 0,
+  mouseDragging = false,
+  mouseDragStart = null,
+  mouseDragCam = null;
+let selRectStart = null,
+  selRectEnd = null,
+  selRectDragging = false;
 
-function handleClick(wp, shift) {
+function handleClick(wp, eventOrShift) {
+  let shift = false,
+    ctrlMeta = false;
+  if (typeof eventOrShift === 'boolean') {
+    shift = eventOrShift;
+  } else if (eventOrShift) {
+    shift = eventOrShift.shiftKey;
+    ctrlMeta = eventOrShift.ctrlKey || eventOrShift.metaKey;
+  }
   if (
     gameState !== 'playing' ||
     document.getElementById('diplo-panel').style.display === 'block' ||
@@ -1749,183 +1937,356 @@ function handleClick(wp, shift) {
   )
     return;
   document.getElementById('action-panel').style.display = 'none';
-
-  // Check click on player army
   const ca = armies.find(
     (a) =>
       !a.dead &&
       dist(a.x, a.y, wp.x, wp.y) < a.size + 8 &&
       a.cid === playerCountry,
   );
-  // Check click on player city
   const cc = cities.find(
     (c) => dist(c.x, c.y, wp.x, wp.y) < 18 && c.cid === playerCountry,
   );
-
-  // If clicked on selected army -> show actions
   if (ca && (ca === selArmy || selArmies.has(ca))) {
-    lastArmy = ca;
-    lastCity = null;
-    const nearby = armies.filter(
-      (a) =>
-        !a.dead &&
-        a.cid === playerCountry &&
-        a !== ca &&
-        dist(a.x, a.y, ca.x, ca.y) < 40,
-    );
+    const selectedArmyIds = new Set();
+    if (selArmy) selectedArmyIds.add(selArmy.id);
+    for (const sa of selArmies)
+      if (!sa.dead && sa.cid === playerCountry) selectedArmyIds.add(sa.id);
+    let hasAnyWithoutFleet = false,
+      hasAnyWithFleet = false;
+    for (const id of selectedArmyIds) {
+      const a = armies.find((ar) => ar.id === id && !ar.dead);
+      if (!a) continue;
+      if (a.ships) hasAnyWithFleet = true;
+      else hasAnyWithoutFleet = true;
+    }
     const acts = [
       {
         text: '⬆️ Upgrade ($50)',
         cl: '#f39c12',
         fn: () => {
-          if (ca.upgrade()) notify('Upgraded!');
+          let upgraded = false;
+          for (const id of selectedArmyIds) {
+            const a = armies.find((ar) => ar.id === id && !ar.dead);
+            if (a && a.upgrade()) upgraded = true;
+          }
+          if (upgraded) notify('Upgraded!');
+          else notify('No upgrades available');
         },
       },
-      { text: '✂️ Split', cl: '#e67e22', fn: () => splitArmy(ca) },
+      {
+        text: '✂️ Split',
+        cl: '#e67e22',
+        fn: () => {
+          const a = armies.find((ar) => ar.id === ca.id && !ar.dead);
+          if (a) splitArmy(a);
+        },
+      },
     ];
-    if (nearby.length)
+    if (hasAnyWithoutFleet)
       acts.push({
-        text: `🔗 Merge (${nearby.length + 1})`,
-        cl: '#8e44ad',
-        fn: () => mergeArmies([ca, ...nearby]),
+        text: '⚓ Buy Fleet ($60)',
+        cl: '#1e88e5',
+        fn: () => {
+          let bought = false;
+          for (const id of selectedArmyIds) {
+            const a = armies.find((ar) => ar.id === id && !ar.dead);
+            if (a && !a.ships && countries[a.cid].money >= 60) {
+              countries[a.cid].money -= 60;
+              a.ships = true;
+              bought = true;
+            }
+          }
+          if (bought) notify('Fleet purchased!');
+          else notify('No funds or already have fleet');
+        },
       });
+    if (hasAnyWithFleet)
+      acts.push({
+        text: '🚢 Sell Fleet (+$30)',
+        cl: '#e53935',
+        fn: () => {
+          let sold = false;
+          for (const id of selectedArmyIds) {
+            const a = armies.find((ar) => ar.id === id && !ar.dead);
+            if (a && a.ships) {
+              a.ships = false;
+              countries[a.cid].money += 30;
+              sold = true;
+            }
+          }
+          if (sold) notify('Fleet sold!');
+        },
+      });
+    acts.push({
+      text: `🔗 Merge`,
+      cl: '#8e44ad',
+      fn: () => {
+        const ids = [...selectedArmyIds];
+        let allClose = true;
+        for (let i = 0; i < ids.length && allClose; i++) {
+          const a = armies.find((ar) => ar.id === ids[i] && !ar.dead);
+          if (!a) continue;
+          for (let j = i + 1; j < ids.length && allClose; j++) {
+            const b = armies.find((ar) => ar.id === ids[j] && !ar.dead);
+            if (!b) continue;
+            if (dist(a.x, a.y, b.x, b.y) >= 40) allClose = false;
+          }
+        }
+        if (allClose) {
+          const main = armies.find((ar) => ar.id === ids[0] && !ar.dead);
+          if (!main) return;
+          const toMerge = armies.filter(
+            (ar) => !ar.dead && ids.includes(ar.id) && ar.id !== ids[0],
+          );
+          if (toMerge.length > 0) mergeArmies([main, ...toMerge]);
+          else notify('No armies to merge');
+        } else {
+          walkToMerge(selectedArmyIds);
+        }
+      },
+    });
     showActions(acts);
     return;
   }
-
-  // If clicked on city (tap again to show actions)
-  if (cc && cc === lastCity) {
+  if (cc && (cc === lastCity || selCities.has(cc))) {
+    const selectedCityIds = new Set();
+    if (lastCity) selectedCityIds.add(lastCity.id);
+    for (const sc of selCities)
+      if (sc.cid === playerCountry) selectedCityIds.add(sc.id);
+    let upgradeCost = 100;
+    if (selectedCityIds.size) {
+      const firstCity = cities.find((ci) => ci.id === [...selectedCityIds][0]);
+      if (firstCity) upgradeCost = 100 * firstCity.lvl;
+    }
     showActions([
       {
-        text: `⬆️ Upgrade City ($${100 * cc.lvl})`,
+        text: `⬆️ Upgrade Cities ($${upgradeCost})`,
         cl: '#f39c12',
         fn: () => {
-          if (cc.upgrade()) notify('Upgraded!');
+          let upgraded = false;
+          for (const id of selectedCityIds) {
+            const c = cities.find((ci) => ci.id === id);
+            if (c && c.upgrade()) upgraded = true;
+          }
+          if (upgraded) notify('Cities upgraded!');
+          else notify('No upgrades available');
         },
       },
       {
         text: '⚔️ Recruit ($100)',
         cl: '#27ae60',
         fn: () => {
-          if (countries[playerCountry].money >= 100) {
-            countries[playerCountry].money -= 100;
-            armies.push(
-              new Army(
-                armies.length,
-                playerCountry,
-                cc.x + (Math.random() - 0.5) * 20,
-                cc.y + (Math.random() - 0.5) * 20,
-              ),
-            );
-            notify('Recruited!');
+          if (countries[playerCountry].money < 100) {
+            notify('Not enough money!');
+            return;
           }
+          let recruited = 0;
+          for (const id of selectedCityIds) {
+            if (countries[playerCountry].money < 100) break;
+            countries[playerCountry].money -= 100;
+            const c = cities.find((ci) => ci.id === id);
+            if (c) {
+              armies.push(
+                new Army(
+                  armies.length,
+                  playerCountry,
+                  c.x + (Math.random() - 0.5) * 20,
+                  c.y + (Math.random() - 0.5) * 20,
+                ),
+              );
+              recruited++;
+            }
+          }
+          if (recruited) notify(`Recruited ${recruited} armies!`);
         },
       },
     ]);
     return;
   }
-
-  // Select army
   if (ca) {
-    lastArmy = null;
-    lastCity = null;
     if (shift) {
+      if (selArmy) {
+        selArmies.add(selArmy);
+        selArmy = null;
+      }
       if (selArmies.has(ca)) selArmies.delete(ca);
       else selArmies.add(ca);
-      selArmy = null;
     } else {
       selArmy = ca;
       selArmies.clear();
+      selCities.clear();
+      lastCity = null;
     }
     notify(`Selected (${Math.floor(ca.str)})`);
     return;
   }
-
-  // Select city (first tap)
   if (cc) {
-    lastCity = cc;
-    lastArmy = null;
-    notify('City - tap again');
+    if (shift) {
+      if (lastCity) {
+        selCities.add(lastCity);
+        lastCity = null;
+      }
+      if (selCities.has(cc)) selCities.delete(cc);
+      else selCities.add(cc);
+      notify(`City toggled selection`);
+    } else {
+      lastCity = cc;
+      selCities.clear();
+      notify('City selected - tap again for actions');
+    }
     return;
   }
-
-  // Move selected army/armies
   if (selArmy || selArmies.size) {
     const tgts = selArmy ? [selArmy] : [...selArmies];
     let m = 0;
+    // Check for Ctrl/Meta (waypoint) or Shift (spread)
+    const isWaypoint = ctrlMeta;
+    const isSpread = shift;
     for (let a of tgts) {
       if (!a || a.dead || a.cid !== playerCountry) continue;
-      const p = findPath(a, wp.x, wp.y);
+      let tx = wp.x,
+        ty = wp.y;
+      if (isSpread) {
+        // Spread: each army gets a slightly different offset in the general direction
+        const angle = Math.random() * Math.PI * 2;
+        const spreadDist = 30 + Math.random() * 40;
+        tx += Math.cos(angle) * spreadDist;
+        ty += Math.sin(angle) * spreadDist;
+      }
+      const p = findPath(a, tx, ty);
       if (p) {
-        a.path = p;
+        if (isWaypoint && a.path && a.path.length > 0) {
+          // Ctrl+click: append to existing path (waypoints)
+          a.path = a.path.concat(p);
+        } else {
+          a.path = p;
+        }
         m++;
       }
     }
-    if (m) notify(`Moving ${m}`);
-    else notify('Blocked');
+    if (m) {
+      if (isWaypoint) notify(`Waypoint set for ${m}`);
+      else if (isSpread) notify(`Spreading ${m}`);
+      else notify(`Moving ${m}`);
+    } else notify('Blocked');
     return;
   }
-
-  // Deselect
-  lastCity = null;
-  lastArmy = null;
   if (!shift) {
     selArmy = null;
     selArmies.clear();
+    selCities.clear();
+    lastCity = null;
   }
 }
 
-// Mouse events
 canvas.addEventListener('mousedown', (e) => {
   if (gameState !== 'playing') return;
   const wp = getWorld(e.clientX, e.clientY);
   mouseDownPos = wp;
   mouseDownTime = Date.now();
   mouseDragging = false;
+  if (e.shiftKey) {
+    selRectStart = { x: e.clientX, y: e.clientY };
+    selRectEnd = null;
+    selRectDragging = false;
+  }
   mouseDragStart = { x: e.clientX, y: e.clientY };
   mouseDragCam = { x: camera.tx, y: camera.ty };
 });
-
 canvas.addEventListener('mousemove', (e) => {
   if (!mouseDragStart) return;
-  const dx = e.clientX - mouseDragStart.x;
-  const dy = e.clientY - mouseDragStart.y;
+  const dx = e.clientX - mouseDragStart.x,
+    dy = e.clientY - mouseDragStart.y;
   if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-    mouseDragging = true;
-    camera.tx = mouseDragCam.x + dx;
-    camera.ty = mouseDragCam.y + dy;
+    if (selRectStart) {
+      selRectEnd = { x: e.clientX, y: e.clientY };
+      selRectDragging = true;
+      mouseDragging = true;
+    } else {
+      mouseDragging = true;
+      camera.tx = mouseDragCam.x + dx;
+      camera.ty = mouseDragCam.y + dy;
+    }
   }
 });
-
+function doRectangleSelect() {
+  if (!selRectStart || !selRectEnd) return;
+  const r1 = canvas.getBoundingClientRect();
+  const x1 =
+    (Math.min(selRectStart.x, selRectEnd.x) - r1.left - camera.x) / camera.zoom;
+  const y1 =
+    (Math.min(selRectStart.y, selRectEnd.y) - r1.top - camera.y) / camera.zoom;
+  const x2 =
+    (Math.max(selRectStart.x, selRectEnd.x) - r1.left - camera.x) / camera.zoom;
+  const y2 =
+    (Math.max(selRectStart.y, selRectEnd.y) - r1.top - camera.y) / camera.zoom;
+  selArmy = null;
+  selArmies.clear();
+  selCities.clear();
+  lastCity = null;
+  let armyCount = 0,
+    cityCount = 0;
+  for (let a of armies) {
+    if (a.dead || a.cid !== playerCountry) continue;
+    if (a.x >= x1 && a.x <= x2 && a.y >= y1 && a.y <= y2) {
+      selArmies.add(a);
+      armyCount++;
+    }
+  }
+  for (let c of cities) {
+    if (c.cid !== playerCountry) continue;
+    if (c.x >= x1 && c.x <= x2 && c.y >= y1 && c.y <= y2) {
+      selCities.add(c);
+      cityCount++;
+    }
+  }
+  if (selArmies.size === 1 && selCities.size === 0) {
+    selArmy = [...selArmies][0];
+    selArmies.clear();
+  }
+  if (selCities.size === 1 && selArmies.size === 0) {
+    lastCity = [...selCities][0];
+    selCities.clear();
+  }
+  if (armyCount > 0 || cityCount > 0)
+    notify(`Selected ${armyCount} armies, ${cityCount} cities`);
+}
 canvas.addEventListener('mouseup', (e) => {
   if (gameState !== 'playing') return;
+  if (selRectDragging && selRectStart && selRectEnd) {
+    doRectangleSelect();
+    selRectStart = null;
+    selRectEnd = null;
+    selRectDragging = false;
+    mouseDownPos = null;
+    mouseDragStart = null;
+    mouseDragging = false;
+    return;
+  }
+  selRectStart = null;
+  selRectEnd = null;
+  selRectDragging = false;
   if (!mouseDragging && mouseDownPos && Date.now() - mouseDownTime < 400)
     handleClick(mouseDownPos, e.shiftKey);
   mouseDownPos = null;
   mouseDragStart = null;
   mouseDragging = false;
 });
-
 canvas.addEventListener(
   'wheel',
   (e) => {
     if (gameState !== 'playing') return;
     e.preventDefault();
     const r = canvas.getBoundingClientRect();
-    const oldZoom = camera.tz;
     camera.tz = Math.min(3, Math.max(0.2, camera.tz - e.deltaY * 0.0008));
-    const mx = e.clientX - r.left;
-    const my = e.clientY - r.top;
-    // Zoom towards mouse position
+    const mx = e.clientX - r.left,
+      my = e.clientY - r.top;
     camera.tx = mx - ((mx - camera.x) / camera.zoom) * camera.tz;
     camera.ty = my - ((my - camera.y) / camera.zoom) * camera.tz;
   },
   { passive: false },
 );
-
 canvas.oncontextmenu = (e) => e.preventDefault();
-
-// Touch events
 canvas.addEventListener(
   'touchstart',
   (e) => {
@@ -1947,8 +2308,8 @@ canvas.addEventListener(
     } else if (nt >= 2) {
       touchState.isPinching = true;
       touchState.startTime = 0;
-      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       touchState.panStart = { x: cx, y: cy, cx: camera.tx, cy: camera.ty };
       touchState.lastPinchDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -1958,7 +2319,6 @@ canvas.addEventListener(
   },
   { passive: false },
 );
-
 canvas.addEventListener(
   'touchmove',
   (e) => {
@@ -1979,8 +2339,8 @@ canvas.addEventListener(
       }
     } else if (nt >= 2) {
       touchState.moved = true;
-      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       camera.tx = touchState.panStart.cx + (cx - touchState.panStart.x);
       camera.ty = touchState.panStart.cy + (cy - touchState.panStart.y);
       const nd = Math.hypot(
@@ -1996,7 +2356,6 @@ canvas.addEventListener(
   },
   { passive: false },
 );
-
 canvas.addEventListener('touchend', (e) => {
   if (gameState !== 'playing') return;
   if (
@@ -2009,10 +2368,9 @@ canvas.addEventListener('touchend', (e) => {
   touchState.startPos = null;
   touchState.moved = false;
 });
-
-// Keyboard
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && gameState === 'playing') {
+  if (gameState !== 'playing') return;
+  if (e.code === 'Space') {
     e.preventDefault();
     document.getElementById('diplo-panel').style.display === 'block'
       ? closeDiplomacy()
@@ -2027,7 +2385,23 @@ document.addEventListener('keydown', (e) => {
       ? closeDiplomacy()
       : ((selArmy = null),
         selArmies.clear(),
+        selCities.clear(),
         (document.getElementById('action-panel').style.display = 'none'));
+  }
+  const isNumber =
+    e.code && (e.code.startsWith('Digit') || e.code.startsWith('Numpad'));
+  if (!spectatorMode && isNumber) {
+    let slot = e.code.startsWith('Digit')
+      ? parseInt(e.code.replace('Digit', ''))
+      : parseInt(e.code.replace('Numpad', ''));
+    if (e.shiftKey) {
+      e.preventDefault();
+      saveSnippet(slot);
+    } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (snippets[slot]) loadSnippet(slot);
+      else notify(`Slot ${slot} is empty`);
+    }
   }
 });
 
@@ -2036,23 +2410,65 @@ function selectScenario(num) {
   scenario = num;
   const sel = document.getElementById('player-country');
   sel.innerHTML = '';
-  if (num === 3) {
-    // WW1
+  const historicalRow = document.getElementById('historical-row');
+  const explorationCB = document.getElementById('exploration-mode');
+  const diffSelect = document.getElementById('difficulty-select');
+  const diffLabel = document.querySelector('#player-options label');
+  const diploRow = document.getElementById('diplo-mode-row');
+  const landscapeRow = document.getElementById('landscape-row');
+  const historicalCB = document.getElementById('historical-mode');
+
+  if (num === 4) {
+    sel.add(new Option('Red', '12'));
+    sel.add(new Option('Blue', '13'));
+    historicalRow.style.display = 'none';
+    historicalCB.checked = false;
+    explorationCB.parentElement.style.display = 'none';
+    landscapeRow.style.display = 'flex';
+    diffLabel.style.display = 'block';
+    diffSelect.style.display = 'block';
+    document.getElementById('country-label').style.display = 'block';
+    diploRow.style.display = 'none';
+  } else if (num === 5) {
+    sel.add(new Option('Red', '12'));
+    sel.add(new Option('Yellow', '14'));
+    sel.add(new Option('Blue', '13'));
+    sel.add(new Option('Green', '15'));
+    historicalRow.style.display = 'none';
+    historicalCB.checked = false;
+    explorationCB.parentElement.style.display = 'none';
+    landscapeRow.style.display = 'flex';
+    diffLabel.style.display = 'block';
+    diffSelect.style.display = 'block';
+    document.getElementById('country-label').style.display = 'block';
+    diploRow.style.display = 'flex';
+  } else if (num === 3) {
     [0, 1, 2, 3, 4, 6, 7, 8, 10, 11].forEach((id) =>
       sel.add(new Option(allCountryDefs[id].name, id.toString())),
     );
+    historicalRow.style.display = 'flex';
+    explorationCB.parentElement.style.display = 'flex';
+    landscapeRow.style.display = 'none';
+    diploRow.style.display = 'flex';
   } else if (num === 2) {
     sel.add(new Option('Germany', '2'));
     sel.add(new Option('USSR', '3'));
+    historicalRow.style.display = 'flex';
+    explorationCB.parentElement.style.display = 'flex';
+    landscapeRow.style.display = 'none';
+    diploRow.style.display = 'flex';
   } else {
-    // WW2 default
     allCountryDefs
       .slice(0, 10)
       .forEach((c) => sel.add(new Option(c.name, c.id.toString())));
+    historicalRow.style.display = 'flex';
+    explorationCB.parentElement.style.display = 'flex';
+    landscapeRow.style.display = 'none';
+    diploRow.style.display = 'flex';
   }
   document.getElementById('scenario-buttons').style.display = 'none';
   document.getElementById('country-select').style.display = 'block';
-  document.getElementById('historical-mode').checked = true;
+  historicalCB.checked = true;
   document.getElementById('spectator-mode').checked = false;
   toggleSpectator();
 }
@@ -2061,7 +2477,6 @@ function backToScenarios() {
   document.getElementById('scenario-buttons').style.display = 'block';
   document.getElementById('country-select').style.display = 'none';
 }
-
 function toggleSpectator() {
   const s = document.getElementById('spectator-mode').checked;
   document.getElementById('difficulty-select').style.display = s
@@ -2080,6 +2495,10 @@ function initializeGame() {
   const startAtWar = document.getElementById('historical-mode').checked;
   spectatorMode = document.getElementById('spectator-mode').checked;
   explorationMode = document.getElementById('exploration-mode').checked;
+  useLandscape = document.getElementById('landscape-mode')?.checked || false;
+
+  closeDiplomacy();
+  closeStatsPanel();
 
   ww2FranceUKAttacked =
     ww2ItalyAttacked =
@@ -2087,13 +2506,17 @@ function initializeGame() {
     ww2GermanyAttackedUSSR =
       false;
   ww2FranceUKAttackTime = 0;
-
   playerCountry = spectatorMode
     ? -1
     : parseInt(document.getElementById('player-country').value);
   difficulty = spectatorMode
     ? 'normal'
     : document.getElementById('difficulty-select').value;
+
+  for (let i = 0; i < 10; i++) snippets[i] = null;
+  updateSnippetBar();
+  statHistory = [];
+  statRecordTimer = 0;
 
   document.getElementById('menu').style.display = 'none';
   if (spectatorMode) {
@@ -2102,197 +2525,316 @@ function initializeGame() {
   } else {
     document.getElementById('hud').style.display = 'flex';
     document.getElementById('spectator-hud').style.display = 'none';
-    // Set HUD flag
     const flagEl = document.getElementById('hud-flag');
     const flagPath = getFlagPath(playerCountry);
     if (flagPath) {
-      const flagImg = flagImages[flagPath];
-      if (flagImg && flagImg.complete && flagImg.naturalWidth > 0) {
-        flagEl.innerHTML = `<img src="${flagPath}" alt="flag">`;
-        flagEl.style.display = 'block';
-      } else {
-        flagEl.innerHTML = `<img src="${flagPath}" alt="flag">`;
-        flagEl.style.display = 'block';
-        // Image will show when loaded
-      }
+      flagEl.innerHTML = `<img src="${flagPath}" alt="flag">`;
+      flagEl.style.background = 'transparent';
+      flagEl.style.display = 'block';
+    } else {
+      flagEl.style.display = 'block';
+      flagEl.innerHTML = '';
+      flagEl.style.background = countries[playerCountry]?.color || '#555';
     }
   }
 
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-
   const baseMoney =
     difficulty === 'easy' ? 400 : difficulty === 'normal' ? 300 : 200;
   const baseDP = 60;
 
-  // Initialize countries
-  if (scenario === 2) {
+  let mapW = MAP_W,
+    mapH = MAP_H;
+  if (scenario === 4 || scenario === 5) {
+    mapW = CUSTOM_MAP_W;
+    mapH = CUSTOM_MAP_H;
+  }
+
+  if (scenario === 4) {
     activeCountries = [
-      { ...allCountryDefs[2], money: baseMoney, dp: baseDP },
-      { ...allCountryDefs[3], money: baseMoney, dp: baseDP },
+      { ...allCountryDefs[12], money: baseMoney, dp: baseDP },
+      { ...allCountryDefs[13], money: baseMoney, dp: baseDP },
     ];
     countries = allCountryDefs.map((d) => ({ ...d, money: 0, dp: 0 }));
-    countries[2] = activeCountries[0];
-    countries[3] = activeCountries[1];
-  } else if (scenario === 3) {
-    const ids = [0, 1, 2, 3, 4, 6, 7, 8, 10, 11];
-    activeCountries = ids.map((id) => ({
-      ...allCountryDefs[id],
-      money: baseMoney,
-      dp: baseDP,
-    }));
+    countries[12] = activeCountries[0];
+    countries[13] = activeCountries[1];
+    rels = Array(countries.length)
+      .fill()
+      .map(() => Array(countries.length).fill(0));
+    rels[12][13] = rels[13][12] = -60;
+    const cw = CUSTOM_COLS,
+      ch = CUSTOM_ROWS;
+    cities = [
+      new City(0, 'Red HQ', 12, 100, 700),
+      new City(1, 'Blue HQ', 13, 1050, 100),
+      new City(2, 'Center', -1, 600, 425),
+      new City(3, 'North-West', -1, 300, 150),
+      new City(4, 'North-East', -1, 900, 150),
+      new City(5, 'South-West', -1, 300, 700),
+      new City(6, 'South-East', -1, 900, 700),
+    ];
+    initGrid();
+    if (useLandscape) generateLandscape();
+    for (let y = 0; y < ch; y++)
+      for (let x = 0; x < cw; x++) {
+        const wx = x * CELL + CELL / 2,
+          wy = y * CELL + CELL / 2;
+        const dRed = dist(wx, wy, 100, 700),
+          dBlue = dist(wx, wy, 1050, 100);
+        if (dRed < 150) grid[y][x].owner = 12;
+        else if (dBlue < 150) grid[y][x].owner = 13;
+      }
+  } else if (scenario === 5) {
+    const useDiplo = document.getElementById('diplo-mode').checked;
+    activeCountries = [
+      { ...allCountryDefs[12], money: baseMoney, dp: baseDP, name: 'Red' },
+      { ...allCountryDefs[14], money: baseMoney, dp: baseDP, name: 'Yellow' },
+      { ...allCountryDefs[13], money: baseMoney, dp: baseDP, name: 'Blue' },
+      { ...allCountryDefs[15], money: baseMoney, dp: baseDP, name: 'Green' },
+    ];
     countries = allCountryDefs.map((d) => ({ ...d, money: 0, dp: 0 }));
-    activeCountries.forEach((ac) => {
-      countries[ac.id] = ac;
-    });
-  } else {
-    activeCountries = allCountryDefs
-      .slice(0, 10)
-      .map((d) => ({ ...d, money: baseMoney, dp: baseDP }));
-    countries = [...activeCountries];
-  }
-
-  // Initialize relations
-  rels = Array(countries.length)
-    .fill()
-    .map(() => Array(countries.length).fill(0));
-  const sr = (a, b, v) => {
-    rels[a][b] = v;
-    rels[b][a] = v;
-  };
-  if (startAtWar) {
-    if (scenario === 1) {
-      sr(2, 5, -60);
-      sr(2, 3, -20);
-      sr(1, 2, -15);
-      sr(0, 2, -10);
-      sr(0, 1, 45);
-      sr(2, 4, 65);
-    } else if (scenario === 2) {
-      sr(2, 3, -60);
-    } else if (scenario === 3) {
-      const cp = [2, 10, 11];
-      const en = [0, 1, 3, 4];
-      for (let c of cp) for (let e of en) sr(c, e, -60);
-      for (let i = 0; i < cp.length; i++)
-        for (let j = i + 1; j < cp.length; j++) sr(cp[i], cp[j], 60);
-      for (let i = 0; i < en.length; i++)
-        for (let j = i + 1; j < en.length; j++) sr(en[i], en[j], 60);
+    countries[12] = activeCountries[0];
+    countries[14] = activeCountries[1];
+    countries[13] = activeCountries[2];
+    countries[15] = activeCountries[3];
+    rels = Array(countries.length)
+      .fill()
+      .map(() => Array(countries.length).fill(0));
+    if (!useDiplo) {
+      const ids = [12, 14, 13, 15];
+      for (let i = 0; i < ids.length; i++)
+        for (let j = i + 1; j < ids.length; j++)
+          rels[ids[i]][ids[j]] = rels[ids[j]][ids[i]] = -60;
     }
-  }
-
-  // Initialize cities
-  cities = [
-    new City(0, 'Paris', 0, 520, 490),
-    new City(1, 'Lyon', 0, 600, 600),
-    new City(2, 'Bordeaux', 0, 440, 600),
-    new City(3, 'London', 1, 280, 240),
-    new City(4, 'Manchester', 1, 250, 180),
-    new City(5, 'Berlin', 2, 860, 410),
-    new City(6, 'Munich', 2, 830, 560),
-    new City(7, 'Hamburg', 2, 790, 330),
-    new City(8, 'Cologne', 2, 760, 460),
-    new City(9, 'Moscow', 3, 1700, 370),
-    new City(10, 'Stalingrad', 3, 1780, 720),
-    new City(11, 'Leningrad', 3, 1540, 230),
-    new City(12, 'Kiev', 3, 1500, 540),
-    new City(13, 'Minsk', 3, 1380, 390),
-    new City(14, 'Odessa', 3, 1520, 740),
-    new City(15, 'Rome', 4, 840, 870),
-    new City(16, 'Milan', 4, 760, 760),
-    new City(17, 'Warsaw', 5, 1200, 430),
-    new City(18, 'Krakow', 5, 1160, 520),
-    new City(19, 'Madrid', 6, 340, 1060),
-    new City(20, 'Barcelona', 6, 450, 1000),
-    new City(21, 'Stockholm', 7, 920, 210),
-    new City(22, 'Oslo', 8, 640, 210),
-    new City(23, 'Belgrade', 9, 1010, 1130),
-  ];
-  if (scenario === 3) {
-    cities.find((c) => c.name === 'Warsaw').cid = 10;
-    cities.find((c) => c.name === 'Krakow').cid = 10;
-    cities.find((c) => c.name === 'Belgrade').cid = 11;
-    cities.push(
-      new City(24, 'Vienna', 10, 790, 660),
-      new City(25, 'Budapest', 10, 940, 760),
-      new City(26, 'Sarajevo', 11, 1080, 1180),
-      new City(27, 'Constantinople', 11, 1300, 1300),
-    );
-  }
-
-  // Initialize armies
-  armies = [];
-  selArmy = null;
-  selArmies.clear();
-  lastCity = lastArmy = null;
-
-  for (let c of activeCountries) {
-    const border = countryBorders[c.name];
-    if (border) {
-      for (let i = 0; i < border.length; i += 2) {
-        const a = new Army(
-          armies.length,
-          c.id,
-          border[i][0],
-          border[i][1],
-          90,
-          90,
+    const cw = CUSTOM_COLS,
+      ch = CUSTOM_ROWS;
+    cities = [
+      new City(0, 'Red HQ', 12, 100, 700),
+      new City(1, 'Yellow HQ', 14, 100, 100),
+      new City(2, 'Blue HQ', 13, 1050, 100),
+      new City(3, 'Green HQ', 15, 1050, 700),
+      new City(4, 'Center', -1, 600, 425),
+    ];
+    initGrid();
+    if (useLandscape) generateLandscape();
+    for (let y = 0; y < ch; y++)
+      for (let x = 0; x < cw; x++) {
+        const wx = x * CELL + CELL / 2,
+          wy = y * CELL + CELL / 2;
+        if (grid[y][x].terrain === 'sea') continue;
+        const dRed = dist(wx, wy, 100, 700),
+          dYel = dist(wx, wy, 100, 100),
+          dBlu = dist(wx, wy, 1050, 100),
+          dGrn = dist(wx, wy, 1050, 700);
+        if (dRed < 150) grid[y][x].owner = 12;
+        else if (dYel < 150) grid[y][x].owner = 14;
+        else if (dBlu < 150) grid[y][x].owner = 13;
+        else if (dGrn < 150) grid[y][x].owner = 15;
+      }
+  } else {
+    if (scenario === 2) {
+      activeCountries = [
+        { ...allCountryDefs[2], money: baseMoney, dp: baseDP },
+        { ...allCountryDefs[3], money: baseMoney, dp: baseDP },
+      ];
+      countries = allCountryDefs.map((d) => ({ ...d, money: 0, dp: 0 }));
+      countries[2] = activeCountries[0];
+      countries[3] = activeCountries[1];
+    } else if (scenario === 3) {
+      const ids = [0, 1, 2, 3, 4, 6, 7, 8, 10, 11];
+      activeCountries = ids.map((id) => ({
+        ...allCountryDefs[id],
+        money: baseMoney,
+        dp: baseDP,
+      }));
+      countries = allCountryDefs.map((d) => ({ ...d, money: 0, dp: 0 }));
+      activeCountries.forEach((ac) => {
+        countries[ac.id] = ac;
+      });
+    } else {
+      activeCountries = allCountryDefs
+        .slice(0, 10)
+        .map((d) => ({ ...d, money: baseMoney, dp: baseDP }));
+      countries = [...activeCountries];
+    }
+    rels = Array(countries.length)
+      .fill()
+      .map(() => Array(countries.length).fill(0));
+    const sr = (a, b, v) => {
+      rels[a][b] = v;
+      rels[b][a] = v;
+    };
+    if (startAtWar) {
+      if (scenario === 1) {
+        sr(2, 5, -60);
+        sr(2, 3, -20);
+        sr(1, 2, -15);
+        sr(0, 2, -10);
+        sr(0, 1, 45);
+        sr(2, 4, 65);
+      } else if (scenario === 2) sr(2, 3, -60);
+      else if (scenario === 3) {
+        const cp = [2, 10, 11],
+          en = [0, 1, 3, 4];
+        for (let c of cp) for (let e of en) sr(c, e, -60);
+        for (let i = 0; i < cp.length; i++)
+          for (let j = i + 1; j < cp.length; j++) sr(cp[i], cp[j], 60);
+        for (let i = 0; i < en.length; i++)
+          for (let j = i + 1; j < en.length; j++) sr(en[i], en[j], 60);
+      }
+    } else if (scenario === 1) {
+      // If not historical mode, set all to enemies
+      for (let c of activeCountries)
+        for (let o of activeCountries)
+          if (c.id !== o.id && Math.random() < 0.3) sr(c.id, o.id, -60);
+    }
+    cities = [
+      new City(0, 'Paris', 0, 520, 490),
+      new City(1, 'Lyon', 0, 600, 600),
+      new City(2, 'Bordeaux', 0, 440, 600),
+      new City(3, 'London', 1, 280, 240),
+      new City(4, 'Manchester', 1, 250, 180),
+      new City(5, 'Berlin', 2, 860, 410),
+      new City(6, 'Munich', 2, 830, 560),
+      new City(7, 'Hamburg', 2, 790, 330),
+      new City(8, 'Cologne', 2, 760, 460),
+      new City(9, 'Moscow', 3, 1700, 370),
+      new City(10, 'Stalingrad', 3, 1780, 720),
+      new City(11, 'Leningrad', 3, 1540, 230),
+      new City(12, 'Kiev', 3, 1500, 540),
+      new City(13, 'Minsk', 3, 1380, 390),
+      new City(14, 'Odessa', 3, 1520, 740),
+      new City(15, 'Rome', 4, 840, 870),
+      new City(16, 'Milan', 4, 760, 760),
+      new City(17, 'Warsaw', 5, 1200, 430),
+      new City(18, 'Krakow', 5, 1160, 520),
+      new City(19, 'Madrid', 6, 340, 1060),
+      new City(20, 'Barcelona', 6, 450, 1000),
+      new City(21, 'Stockholm', 7, 920, 210),
+      new City(22, 'Oslo', 8, 640, 210),
+      new City(23, 'Belgrade', 9, 1010, 1130),
+    ];
+    if (scenario === 3) {
+      cities.find((c) => c.name === 'Warsaw').cid = 10;
+      cities.find((c) => c.name === 'Krakow').cid = 10;
+      cities.find((c) => c.name === 'Belgrade').cid = 11;
+      cities.push(
+        new City(24, 'Vienna', 10, 790, 660),
+        new City(25, 'Budapest', 10, 940, 760),
+        new City(26, 'Sarajevo', 11, 1080, 1180),
+        new City(27, 'Constantinople', 11, 1300, 1300),
+      );
+    }
+    armies = [];
+    selArmy = null;
+    selArmies.clear();
+    selCities.clear();
+    for (let c of activeCountries) {
+      let borderKey = c.name;
+      if (c.id === 3) borderKey = 'Russia';
+      const border = countryBorders[borderKey];
+      if (border) {
+        for (let i = 0; i < border.length; i += 2) {
+          const a = new Army(
+            armies.length,
+            c.id,
+            border[i][0],
+            border[i][1],
+            90,
+            90,
+          );
+          if (i % 4 === 0) a.garrison = true;
+          armies.push(a);
+        }
+      }
+      if (c.id === 2 && scenario === 1) {
+        for (let k = 0; k < 5; k++)
+          armies.push(
+            new Army(
+              armies.length,
+              2,
+              1000 + Math.random() * 40,
+              400 + Math.random() * 60,
+              110,
+              110,
+            ),
+          );
+        for (let k = 0; k < 3; k++)
+          armies.push(
+            new Army(
+              armies.length,
+              2,
+              980 + Math.random() * 40,
+              450 + Math.random() * 50,
+              110,
+              110,
+            ),
+          );
+      }
+      if (c.id === 3 && scenario === 1 && startAtWar) {
+        for (let k = 0; k < 6; k++)
+          armies.push(
+            new Army(
+              armies.length,
+              3,
+              1250 + Math.random() * 50,
+              420 + Math.random() * 80,
+              110,
+              110,
+            ),
+          );
+      }
+      const myCities = cities.filter((ct) => ct.cid === c.id);
+      for (let ct of myCities) {
+        armies.push(new Army(armies.length, c.id, ct.x + 15, ct.y, 100, 100));
+        armies.push(
+          new Army(armies.length, c.id, ct.x - 15, ct.y + 12, 95, 95),
         );
-        if (i % 4 === 0) a.garrison = true;
-        armies.push(a);
       }
     }
-    // Special reinforcements for specific scenarios
-    if (c.id === 2 && scenario === 1) {
-      for (let k = 0; k < 5; k++)
-        armies.push(
-          new Army(
-            armies.length,
-            2,
-            1000 + Math.random() * 40,
-            400 + Math.random() * 60,
-            110,
-            110,
-          ),
-        );
-      for (let k = 0; k < 3; k++)
-        armies.push(
-          new Army(
-            armies.length,
-            2,
-            980 + Math.random() * 40,
-            450 + Math.random() * 50,
-            110,
-            110,
-          ),
-        );
-    }
-    if (c.id === 3 && scenario === 1 && startAtWar) {
-      for (let k = 0; k < 6; k++)
-        armies.push(
-          new Army(
-            armies.length,
-            3,
-            1250 + Math.random() * 50,
-            420 + Math.random() * 80,
-            110,
-            110,
-          ),
-        );
-    }
-    const myCities = cities.filter((ct) => ct.cid === c.id);
-    for (let ct of myCities) {
-      armies.push(new Army(armies.length, c.id, ct.x + 15, ct.y, 100, 100));
-      armies.push(new Army(armies.length, c.id, ct.x - 15, ct.y + 12, 95, 95));
+  }
+
+  if (scenario === 4 || scenario === 5) {
+    armies = [];
+    selArmy = null;
+    selArmies.clear();
+    selCities.clear();
+    for (let c of activeCountries) {
+      const myCities = cities.filter((ct) => ct.cid === c.id);
+      for (let ct of myCities) {
+        for (let k = 0; k < 4; k++)
+          armies.push(
+            new Army(
+              armies.length,
+              c.id,
+              ct.x + 15 + (Math.random() - 0.5) * 30,
+              ct.y + (Math.random() - 0.5) * 30,
+              100,
+              100,
+            ),
+          );
+        for (let k = 0; k < 4; k++)
+          armies.push(
+            new Army(
+              armies.length,
+              c.id,
+              ct.x - 15 + (Math.random() - 0.5) * 30,
+              ct.y + 12 + (Math.random() - 0.5) * 30,
+              95,
+              95,
+            ),
+          );
+      }
     }
   }
 
-  initGrid();
+  if (scenario !== 4 && scenario !== 5) initGrid();
   drawMap();
 
   camera.tz = 0.55;
-  camera.tx = canvas.width / 2 - (MAP_W * camera.tz) / 2;
-  camera.ty = canvas.height / 2 - (MAP_H * camera.tz) / 2;
+  camera.tx = canvas.width / 2 - (mapW * camera.tz) / 2;
+  camera.ty = canvas.height / 2 - (mapH * camera.tz) / 2;
   camera.x = camera.tx;
   camera.y = camera.ty;
   camera.zoom = camera.tz;
@@ -2305,7 +2847,61 @@ function initializeGame() {
   requestAnimationFrame(gameLoop);
 }
 
+function generateLandscape() {
+  const cols = grid[0].length,
+    rows = grid.length;
+  // Add some random seas
+  for (let i = 0; i < 15; i++) {
+    const cx = Math.floor(Math.random() * cols),
+      cy = Math.floor(Math.random() * rows);
+    const r = 3 + Math.floor(Math.random() * 6);
+    for (let dy = -r; dy <= r; dy++)
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r * r) continue;
+        const nx = cx + dx,
+          ny = cy + dy;
+        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+        // Don't place sea on city positions
+        let isCity = false;
+        for (const city of cities) {
+          const gx = Math.floor(city.x / CELL),
+            gy = Math.floor(city.y / CELL);
+          if (Math.abs(nx - gx) < 4 && Math.abs(ny - gy) < 4) {
+            isCity = true;
+            break;
+          }
+        }
+        if (!isCity) grid[ny][nx].terrain = 'sea';
+      }
+  }
+  // Add some random mountains
+  for (let i = 0; i < 10; i++) {
+    const cx = Math.floor(Math.random() * cols),
+      cy = Math.floor(Math.random() * rows);
+    const r = 2 + Math.floor(Math.random() * 4);
+    for (let dy = -r; dy <= r; dy++)
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r * r) continue;
+        const nx = cx + dx,
+          ny = cy + dy;
+        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+        let isCity = false;
+        for (const city of cities) {
+          const gx = Math.floor(city.x / CELL),
+            gy = Math.floor(city.y / CELL);
+          if (Math.abs(nx - gx) < 4 && Math.abs(ny - gy) < 4) {
+            isCity = true;
+            break;
+          }
+        }
+        if (!isCity && grid[ny][nx].terrain !== 'sea')
+          grid[ny][nx].terrain = 'mtn';
+      }
+  }
+}
+
 function returnToMenu() {
+  if (!confirm('Are you sure you want to quit?')) return;
   gameState = 'menu';
   document.getElementById('menu').style.display = 'block';
   document.getElementById('scenario-buttons').style.display = 'block';
@@ -2316,6 +2912,8 @@ function returnToMenu() {
     'diplo-panel',
     'diplo-overlay',
     'action-panel',
+    'stats-panel',
+    'stats-overlay',
   ].forEach((id) => {
     const e = document.getElementById(id);
     if (e) e.style.display = 'none';
@@ -2326,14 +2924,13 @@ function returnToMenu() {
 function togglePause() {
   if (document.getElementById('diplo-panel').style.display === 'block') return;
   paused = !paused;
-  const b = document.getElementById('pause-btn');
-  const sb = document.getElementById('spectator-pause-btn');
+  const b = document.getElementById('pause-btn'),
+    sb = document.getElementById('spectator-pause-btn');
   if (b) b.textContent = paused ? '▶️' : '⏸️';
   if (sb) sb.textContent = paused ? '▶️' : '⏸️';
   if (!paused) refreshHUD();
 }
 
-// ========== GAME LOOP ==========
 function gameLoop(ts) {
   if (gameState === 'playing') {
     const dt = Math.min((ts - lastFrameTime) / 1000, 0.05);
@@ -2349,8 +2946,11 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 lastFrameTime = performance.now();
 requestAnimationFrame(gameLoop);
-
 window.addEventListener('resize', () => {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+});
+document.addEventListener('DOMContentLoaded', () => {
+  closeDiplomacy();
+  closeStatsPanel();
 });
